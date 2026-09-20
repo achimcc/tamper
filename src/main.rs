@@ -17,6 +17,7 @@ tamper — mutation-test your build-time assertions
   tamper run [OPTIONS]    break each case's file, build, judge the message
   tamper dry [OPTIONS]    does each lever still hit? (no build, seconds)
   tamper list [OPTIONS]   the cases, their targets, their soundness
+  tamper import FILE      one-shot: turn the shell driver into TOML
   tamper rules            the seven verdicts, each explained
 
 OPTIONS
@@ -56,6 +57,7 @@ struct Opts {
     shard: usize,
     of: usize,
     commit: Option<String>,
+    rest: Vec<String>,
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -72,6 +74,7 @@ fn run() -> Result<ExitCode, String> {
             Value(v) if command.is_none() => {
                 command = Some(v.string().map_err(|e| e.to_string())?);
             }
+            Value(v) => o.rest.push(v.string().map_err(str_err)?),
             Long("config") => o.config = Some(PathBuf::from(parser.value().map_err(str_err)?)),
             Long("target") => o
                 .targets
@@ -110,6 +113,13 @@ fn run() -> Result<ExitCode, String> {
         Some("list") => list(&o),
         Some("run") => execute(&o, false),
         Some("dry") => execute(&o, true),
+        Some("import") => {
+            let file = o
+                .rest
+                .first()
+                .ok_or("import needs the path of the shell driver")?;
+            import(Path::new(file))
+        }
         Some(other) => Err(format!("unknown command `{other}`\n\n{USAGE}")),
         None => {
             println!("{USAGE}");
@@ -160,6 +170,33 @@ fn list(o: &Opts) -> Result<ExitCode, String> {
         println!("  {target}: {n}");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// One-shot migration: TOML to stdout, every leftover to stderr by name.
+/// Exit 1 when anything is left over, so a redirect cannot look finished.
+fn import(file: &Path) -> Result<ExitCode, String> {
+    let text = std::fs::read_to_string(file)
+        .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    let got = tamper::import::parse_script(&text);
+    print!("{}", tamper::import::to_toml(&got.cases));
+
+    eprintln!(
+        "\n{} of {} calls became cases; {} of them got an id made up from their name \
+         (their comment block carried no number).\n{} leftover(s):",
+        got.cases.len(),
+        got.seen_calls,
+        got.synthetic_ids,
+        got.leftovers.len()
+    );
+    for l in &got.leftovers {
+        eprintln!("  {}:{}  {}", file.display(), l.line, l.reason);
+        eprintln!("      {}", l.snippet);
+    }
+    if got.leftovers.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(1))
+    }
 }
 
 fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
