@@ -1,0 +1,36 @@
+warning: Git tree '/run/user/1000/tamper/repo/run-1/slot-2' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - treff verschickt Post, aber 85-treff.yaml gibt den `email`-Scope nicht frei
+
+       Ohne den Scope liefert Authentik keine Adresse, treff legt Abonnements
+       an, und der Sender findet zu keinem Konto eine — er hakt jede
+       Benachrichtigung als „nichts zu senden" ab. Das ist die richtige
+       Reaktion auf eine fehlende Adresse und macht den Fehler unsichtbar:
+       kein Alarm, keine Meldung, nur ein Forum, das sich nie meldet.

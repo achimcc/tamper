@@ -1,0 +1,6 @@
+error: syntax error, unexpected '(', expecting 'inherit'
+       at /tmp/photo-01.nix:64:5:
+           63|   # Hebel und ist im Repo ohnehin doppelt versperrt, s. flake.nix:456.)
+           64|     (import ../../../pkgs/onnxruntime-openvino)
+             |     ^
+           65|     # Rueckfall JE MODELL statt Riegel fuer alle (2026-09-12). Die Begruendung

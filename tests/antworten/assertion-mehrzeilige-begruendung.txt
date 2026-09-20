@@ -1,0 +1,52 @@
+warning: Git tree '/run/user/1000/tamper/repo/run-1/slot-0' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - Pruefung 98: der Weg zum Signal-Namen hat einen Mangel:
+
+         36-eigene-formulare.yaml hat keinen Prompt mit `field_key: attributes.signal_username` — ohne den `attributes.`-Praefix verwirft der user_write-Stage den Wert STILL
+
+       Der Bot liest `signal_username` von jedem Konto und begruesst nur, wen
+       er kennt — wer den Namen nicht eintragen kann, benutzt den Bot nie.
+
+       DREI ZUSAGEN GEHOEREN ZUSAMMEN und werden deshalb zusammen geprueft:
+
+         1. der Prompt selbst, mit dem `attributes.`-Praefix — ohne ihn
+            verwirft der user_write-Stage den Wert kommentarlos;
+         2. sein Platz in der `fields`-Liste seiner Stufe — die Liste wird
+            UEBERSCHRIEBEN, nicht ergaenzt, und was dort fehlt, ist angelegt
+            und unerreichbar;
+         3. der Link auf seinen Flow im Zahnrad-Menue der Einstiegsseite.
+
+       DIE DRITTE IST AM 2026-09-09 DAZUGEKOMMEN, weil genau sie gefehlt hat.
+       Eins und zwei standen tadellos, jede Messung am Server war gruen — und
+       der erste Mensch, der das Feld benutzen wollte, fand es nicht: Das
+       Menue benennt HANDLUNGEN, und der einzige Eintrag, der auf das
+       Formular zeigte, hiess „E-Mail ändern". Ein Feld, zu dem kein Weg
+       fuehrt, ist so unerreichbar wie eines, das es nicht gibt — nur
+       schwerer zu bemerken.

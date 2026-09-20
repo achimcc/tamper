@@ -22,22 +22,30 @@ pub fn check(tree: &Path, files: &[PathBuf]) -> Result<Option<String>, String> {
             .arg(&full)
             .output()
             .map_err(|e| format!("cannot run nix-instantiate: {e}"))?;
-        if !out.status.success() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            // ONLY A SYNTAX ERROR COUNTS. Measured 2026-09-20:
-            // `nix-instantiate --parse` resolves variables inside string
-            // interpolations, so a syntactically perfect file with a free
-            // `pkgs` fails with "undefined variable". That file parses; it
-            // just cannot be evaluated on its own, and a case may create
-            // exactly such a snippet on purpose for a check that only reads
-            // source text. Calling it broken-nix would be this verdict's own
-            // misattribution, pointing the other way.
-            if !stderr.contains("syntax error") {
-                continue;
-            }
-            let first = stderr.lines().next().unwrap_or("").trim().to_string();
-            return Ok(Some(format!("{} does not parse: {first}", file.display())));
+        if !out.status.success()
+            && let Some(msg) = from_stderr(file, &String::from_utf8_lossy(&out.stderr))
+        {
+            return Ok(Some(msg));
         }
     }
     Ok(None)
+}
+
+/// The rule itself, apart from the process that produces the input — so it
+/// can be tested against a REAL `nix-instantiate --parse` output instead of
+/// an invented one. `None` means "this is not a syntax error".
+///
+/// ONLY A SYNTAX ERROR COUNTS. Measured 2026-09-20: `nix-instantiate
+/// --parse` resolves variables inside string interpolations, so a
+/// syntactically perfect file with a free `pkgs` fails with "undefined
+/// variable". That file parses; it just cannot be evaluated on its own, and
+/// a case may create exactly such a snippet on purpose for a check that only
+/// reads source text. Calling it broken-nix would be this verdict's own
+/// misattribution, pointing the other way.
+pub fn from_stderr(file: &Path, stderr: &str) -> Option<String> {
+    if !stderr.contains("syntax error") {
+        return None;
+    }
+    let first = stderr.lines().next().unwrap_or("").trim();
+    Some(format!("{} does not parse: {first}", file.display()))
 }
