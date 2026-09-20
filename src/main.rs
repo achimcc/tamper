@@ -226,7 +226,8 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         repo: repo.clone(),
         commit,
         scratch: scratch_dir(&repo)?,
-        cache: Cache::open(&cache_dir(&repo)?, &repo)?,
+        // Measured once for the whole run, not once per case.
+        cache: Cache::open(&cache_dir(&repo)?, &repo, &tamper::cache::nix_version()?)?,
         cfg,
         no_cache: o.no_cache || dry,
     };

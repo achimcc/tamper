@@ -41,7 +41,7 @@ fn defs() -> Vec<String> {
 #[test]
 fn the_same_tree_gives_the_same_key() {
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let a = c.key(&a_case(), &defs()).unwrap();
     let b = c.key(&a_case(), &defs()).unwrap();
     assert_eq!(a, b);
@@ -50,7 +50,7 @@ fn the_same_tree_gives_the_same_key() {
 #[test]
 fn changing_the_sabotaged_file_changes_the_key() {
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let before = c.key(&a_case(), &defs()).unwrap();
     std::fs::write(dir.join("repo/lib/gaeste.nix"), "{ uidBasis = 300000; }\n").unwrap();
     assert_ne!(before, c.key(&a_case(), &defs()).unwrap());
@@ -59,7 +59,7 @@ fn changing_the_sabotaged_file_changes_the_key() {
 #[test]
 fn changing_the_check_definitions_changes_the_key() {
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let before = c.key(&a_case(), &defs()).unwrap();
     std::fs::write(dir.join("repo/checks.nix"), "more assertions\n").unwrap();
     assert_ne!(before, c.key(&a_case(), &defs()).unwrap());
@@ -68,7 +68,7 @@ fn changing_the_check_definitions_changes_the_key() {
 #[test]
 fn changing_the_expected_pattern_changes_the_key() {
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let before = c.key(&a_case(), &defs()).unwrap();
     let mut other = a_case();
     other.expect = "etwas ganz anderes".into();
@@ -80,7 +80,7 @@ fn prose_outside_the_declared_set_does_not_change_the_key() {
     // THE NAMED ASSUMPTION. This test exists so that anybody widening it
     // has to come here and say so out loud.
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let before = c.key(&a_case(), &defs()).unwrap();
     std::fs::write(dir.join("repo/README.md"), "different prose\n").unwrap();
     assert_eq!(before, c.key(&a_case(), &defs()).unwrap());
@@ -118,7 +118,7 @@ fn a_missing_definition_file_is_an_error_and_not_a_silent_skip() {
 #[test]
 fn only_ok_is_stored_and_it_comes_back_with_an_age() {
     let dir = sandbox();
-    let c = Cache::open(&dir.join("cache"), &dir.join("repo")).unwrap();
+    let c = Cache::open(&dir.join("cache"), &dir.join("repo"), "nix (Nix) 2.34.0").unwrap();
     let key = c.key(&a_case(), &defs()).unwrap();
     assert!(c.get(&key).is_none());
     c.put_ok(&key).unwrap();

@@ -26,6 +26,12 @@ use crate::cases::{Case, Lever};
 pub struct Cache {
     dir: PathBuf,
     repo: PathBuf,
+    /// A different Nix evaluates differently, so its version belongs in
+    /// every key. It is MEASURED ONCE by the caller and handed in — asking
+    /// per case would start 525 processes to get the same answer 525 times,
+    /// and it would make the cache unusable anywhere `nix` is absent, such
+    /// as inside a build sandbox running these very tests.
+    nix_version: String,
 }
 
 pub struct CachedOk {
@@ -33,12 +39,13 @@ pub struct CachedOk {
 }
 
 impl Cache {
-    pub fn open(dir: &Path, repo: &Path) -> Result<Cache, String> {
+    pub fn open(dir: &Path, repo: &Path, nix_version: &str) -> Result<Cache, String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create cache dir {}: {e}", dir.display()))?;
         Ok(Cache {
             dir: dir.to_path_buf(),
             repo: repo.to_path_buf(),
+            nix_version: nix_version.to_string(),
         })
     }
 
@@ -91,7 +98,7 @@ impl Cache {
             h.update(b"\0");
         }
 
-        h.update(nix_version()?.as_bytes());
+        h.update(self.nix_version.as_bytes());
         Ok(format!("{:x}", h.finalize()))
     }
 
@@ -156,12 +163,22 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// A different Nix evaluates differently, so it belongs in the key. The CI
-/// pins its version for the same reason.
-fn nix_version() -> Result<String, String> {
+/// Ask Nix which version it is — once per run, at startup.
+///
+/// This FAILS LOUDLY when `nix` is missing rather than falling back to a
+/// placeholder: a key that quietly drops the version would hand yesterday's
+/// `ok` to a different evaluator. The CI pins its Nix version for the same
+/// reason.
+pub fn nix_version() -> Result<String, String> {
     let out = std::process::Command::new("nix")
         .arg("--version")
         .output()
         .map_err(|e| format!("cannot run nix --version: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "nix --version failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }

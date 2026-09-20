@@ -21,6 +21,15 @@
           version = (nixpkgs.lib.importTOML ./Cargo.toml).package.version;
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
+          # The test suite drives the real tools rather than mocking them:
+          # a throwaway worktree is a `git worktree`, a lever is a real
+          # `sed`. Without these three, `nix flake check` would run one test
+          # file and stop.
+          nativeCheckInputs = with pkgs; [
+            git
+            gnused
+            perl
+          ];
           meta = {
             description = "Mutation-test your build-time assertions";
             homepage = "https://github.com/achimcc/tamper";

@@ -2,6 +2,12 @@ use std::path::PathBuf;
 
 use tamper::parse;
 
+// These four drive `nix-instantiate` itself, which a Nix build sandbox does
+// not have. They are ignored there rather than faked: a test that quietly
+// passes because its tool is missing proves nothing and says so to nobody.
+// The full run is `cargo test -- --include-ignored`, and `cargo test`
+// reports the four as ignored, so the gap is visible and not silent.
+
 fn sandbox() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "tamper-parse-{}-{}",
@@ -16,6 +22,7 @@ fn sandbox() -> PathBuf {
 }
 
 #[test]
+#[ignore = "needs nix-instantiate; run with --include-ignored"]
 fn healthy_nix_parses() {
     let dir = sandbox();
     std::fs::write(dir.join("a.nix"), "{ uidBasis = 200000; }\n").unwrap();
@@ -23,6 +30,7 @@ fn healthy_nix_parses() {
 }
 
 #[test]
+#[ignore = "needs nix-instantiate; run with --include-ignored"]
 fn a_syntax_error_is_reported_with_the_file_name() {
     // Measured 2026-09-20: `uidBasis = "pick;` gives
     // "syntax error, unexpected '=', expecting ';'".
@@ -34,6 +42,7 @@ fn a_syntax_error_is_reported_with_the_file_name() {
 }
 
 #[test]
+#[ignore = "needs nix-instantiate; run with --include-ignored"]
 fn files_that_are_not_nix_are_skipped() {
     // A case may sabotage a .yaml blueprint or a .rs file; nix-instantiate
     // has nothing to say about those.
@@ -46,6 +55,7 @@ fn files_that_are_not_nix_are_skipped() {
 }
 
 #[test]
+#[ignore = "needs nix-instantiate; run with --include-ignored"]
 fn a_deleted_file_is_skipped_and_not_an_error() {
     // Case 39 removes a file from the index; the path shows up in
     // `git status` but there is nothing left to parse.
