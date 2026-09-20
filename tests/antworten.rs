@@ -98,6 +98,39 @@ fn a_real_syntax_error_becomes_broken_nix() {
     );
 }
 
+/// The router cases compare LITERALLY (`compare = "literal"`), because their
+/// patterns carry `[`, `]` and `(` from the probe's own output. This is one
+/// of them, from a real QEMU run of the OpenWrt image.
+#[test]
+fn a_real_router_probe_failure_matches_literally() {
+    let out = antwort("router-probe-fw4.txt");
+    assert!(out.contains("PROBE-NEIN: fw4 check (Exit 0)"));
+    assert!(matches(&out, "PROBE-NEIN: fw4 check", Compare::Literal));
+    assert!(matches!(classify(1, &out), Outcome::Red(_)));
+}
+
+/// AND THE LIMIT THAT ONLY REAL OUTPUT SHOWS: nix prefixes every line a
+/// builder writes with `> `. Normalising whitespace does not remove it, so a
+/// pattern spanning two builder lines cannot match — the `>` lands in the
+/// middle of it. No case in the inventory depends on that today; the test is
+/// here so the next person finds the answer instead of the puzzle.
+#[test]
+fn the_builder_prefix_survives_normalising() {
+    let out = antwort("router-probe-fw4.txt");
+    assert!(out.contains("> router-probe: die VM meldet nicht gruen:\n       > PROBE-NEIN"));
+    // Across the break the text reads "…gruen: > PROBE-NEIN…", not "…gruen: PROBE-NEIN…".
+    assert!(matches(
+        &out,
+        "die VM meldet nicht gruen: > PROBE-NEIN",
+        Compare::Literal
+    ));
+    assert!(!matches(
+        &out,
+        "die VM meldet nicht gruen: PROBE-NEIN",
+        Compare::Literal
+    ));
+}
+
 /// The other half of that rule, and the one that was wrong first: an
 /// undefined variable is an EVALUATION error. The file parses.
 #[test]

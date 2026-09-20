@@ -1,0 +1,46 @@
+warning: Git tree '/run/user/1000/tamper/repo/run-1/slot-0' is dirty
+these 6 derivations will be built:
+  /nix/store/ks9r3whi3jidqxmrrxi1xvqfqwcb8gj9-uci-firewall.drv
+  /nix/store/4znjwc2bda54g15gzbkxwzganw9j1pir-router-konfig-x86.drv
+  /nix/store/sgdf4dhi676y183v2wcfr6y9y087zxid-router-stand.drv
+  /nix/store/7g8ia68ghg4kabm31khq7aqs6qwpnkyf-router-dateien-x86.drv
+  /nix/store/vz9ln6fgr7amzr1hzjl5g3biii9g31cl-openwrt-25.12.5-x86-64-generic.drv
+  /nix/store/2vfbid79m0mvgvz44hgg9qif4apj6msl-router-probe.drv
+building '/nix/store/ks9r3whi3jidqxmrrxi1xvqfqwcb8gj9-uci-firewall.drv'...
+building '/nix/store/4znjwc2bda54g15gzbkxwzganw9j1pir-router-konfig-x86.drv'...
+building '/nix/store/sgdf4dhi676y183v2wcfr6y9y087zxid-router-stand.drv'...
+building '/nix/store/7g8ia68ghg4kabm31khq7aqs6qwpnkyf-router-dateien-x86.drv'...
+building '/nix/store/vz9ln6fgr7amzr1hzjl5g3biii9g31cl-openwrt-25.12.5-x86-64-generic.drv'...
+building '/nix/store/2vfbid79m0mvgvz44hgg9qif4apj6msl-router-probe.drv'...
+error: Cannot build '/nix/store/2vfbid79m0mvgvz44hgg9qif4apj6msl-router-probe.drv'.
+       Reason: builder failed with exit code 1.
+       Output paths:
+         /nix/store/pj0jv1pka1wgfb0hckgmcr3wpngvdjjh-router-probe
+       Last 25 log lines:
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       >
+       > router-probe: die VM meldet nicht gruen:
+       > PROBE-NEIN: fw4 check (Exit 0): [!] Section @zone[0] (wan) option 'input' specifies invalid value 'FOO'
+       For full logs, run:
+         nix log /nix/store/2vfbid79m0mvgvz44hgg9qif4apj6msl-router-probe.drv
