@@ -18,10 +18,10 @@ breaks each one in a throwaway worktree, builds, and judges what came back.
 tamper run      break each case's file, build, judge the message
 tamper dry      does each lever still hit? (no build, seconds)
 tamper list     the cases, their targets, their soundness
-tamper rules    the seven verdicts, each explained
+tamper rules    the eight verdicts, each explained
 ```
 
-## The seven verdicts
+## The eight verdicts
 
 The point of the list is a distinction a shell loop tends to lose.
 
@@ -30,10 +30,18 @@ The point of the list is a distinction a shell loop tends to lose.
 | `ok` | the build failed with the expected message | yes |
 | `dead-lever` | the change altered nothing — the CASE is dead, not the check | no |
 | `not-red` | the build was green: the check does not fire | yes |
+| `false-alarm` | the build failed, although the case says it must stay green | yes |
 | `other-message` | the build failed, but with a different message | yes |
 | `broken-nix` | the edited file no longer parses | no |
 | `network` | DNS or a download was gone — **no ruling** | — |
 | `queue-timeout` | the build never started — **no ruling** | — |
+
+**One of them reads the other way round.** Most cases break something and
+expect the check to go red. A few say the opposite: this change is legitimate,
+and the check must stay GREEN. `green = true` on the case states that, and
+`false-alarm` is what comes back when the check fires anyway — a check that is
+too eager is as broken as one that never fires, and calling that `not-red`
+would say the reverse of what happened.
 
 **Two of them are not results.** If the network was gone, or the build never
 started, nothing was learned about the tree, and counting that as "all good"
@@ -62,6 +70,9 @@ levers = [
   { file = "lib/guests.nix", sed = "s|a|b|" },
 ]
 ```
+
+A case either names the message it expects or sets `green = true`; both at
+once, or neither, is refused at load time.
 
 `expect` is a case-insensitive **regular expression** by default, matched
 against the build output with whitespace normalised — build tools wrap their

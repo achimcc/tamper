@@ -1,10 +1,15 @@
-//! The seven outcomes of a sabotage case.
+//! The eight outcomes of a sabotage case.
 //!
 //! The point of this enum is a distinction the shell driver could not make:
-//! two of the seven say nothing at all about the tree (the network was gone,
+//! two of the eight say nothing at all about the tree (the network was gone,
 //! or the build never started), and two more can be decided without building
 //! anything. Collapsing them into "OK/FAIL" is what made a dead lever look
 //! like a check that cannot go red.
+//!
+//! `FalseAlarm` came last and from the corpus: a handful of cases state that
+//! a change must leave the check GREEN. That is a statement about the check
+//! being too eager, and it is the exact opposite of `NotRed` — reporting it
+//! as `NotRed` would have said the reverse of what happened.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -14,6 +19,9 @@ pub enum Verdict {
     DeadLever,
     /// The build was green: the check does not fire.
     NotRed,
+    /// The case said this change must leave the check GREEN, and it went red.
+    /// The opposite finding of `NotRed`.
+    FalseAlarm,
     /// The build failed, but with a different message.
     OtherMessage,
     /// The sabotaged file no longer parses, so the parser failed, not the
@@ -26,10 +34,11 @@ pub enum Verdict {
 }
 
 impl Verdict {
-    pub const ALL: [Verdict; 7] = [
+    pub const ALL: [Verdict; 8] = [
         Verdict::Ok,
         Verdict::DeadLever,
         Verdict::NotRed,
+        Verdict::FalseAlarm,
         Verdict::OtherMessage,
         Verdict::BrokenNix,
         Verdict::Network,
@@ -41,6 +50,7 @@ impl Verdict {
             Verdict::Ok => "ok",
             Verdict::DeadLever => "dead-lever",
             Verdict::NotRed => "not-red",
+            Verdict::FalseAlarm => "false-alarm",
             Verdict::OtherMessage => "other-message",
             Verdict::BrokenNix => "broken-nix",
             Verdict::Network => "network",
@@ -52,7 +62,11 @@ impl Verdict {
     pub fn is_finding(self) -> bool {
         matches!(
             self,
-            Verdict::DeadLever | Verdict::NotRed | Verdict::OtherMessage | Verdict::BrokenNix
+            Verdict::DeadLever
+                | Verdict::NotRed
+                | Verdict::OtherMessage
+                | Verdict::BrokenNix
+                | Verdict::FalseAlarm
         )
     }
 
@@ -71,6 +85,10 @@ impl Verdict {
                  because a case may stage or unstage a file)"
             }
             Verdict::NotRed => "the build was green — the check does not fire",
+            Verdict::FalseAlarm => {
+                "the build failed, although this case says the change must leave the \
+                 check green — the check fires on something legitimate"
+            }
             Verdict::OtherMessage => "the build failed, but with a different message",
             Verdict::BrokenNix => {
                 "the sabotaged file no longer parses — this proves that broken Nix \

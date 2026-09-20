@@ -18,7 +18,7 @@ tamper — mutation-test your build-time assertions
   tamper dry [OPTIONS]    does each lever still hit? (no build, seconds)
   tamper list [OPTIONS]   the cases, their targets, their soundness
   tamper import FILE      one-shot: turn the shell driver into TOML
-  tamper rules            the seven verdicts, each explained
+  tamper rules            the eight verdicts, each explained
 
 OPTIONS
   --config FILE     tamper.toml (default: ./tamper.toml)

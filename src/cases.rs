@@ -100,7 +100,14 @@ pub struct Case {
     pub id: String,
     pub name: String,
     pub target: String,
+    /// The message the build must carry. Empty exactly when `green` is set.
+    #[serde(default)]
     pub expect: String,
+    /// This change must leave the check GREEN. A handful of cases state that
+    /// — they guard against a check that fires on something legitimate — and
+    /// it is the opposite statement from every other case here.
+    #[serde(default)]
+    pub green: bool,
     #[serde(default)]
     pub compare: Compare,
     pub why: String,
@@ -153,13 +160,24 @@ pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
                 "{at}: no lever — the case would build an unchanged tree and report green"
             ));
         }
+        match (case.green, case.expect.trim().is_empty()) {
+            (true, false) => problems.push(format!(
+                "{at}: `green` and `expect` at once — a case either names the message it \
+                 expects or says the check must stay green, not both"
+            )),
+            (false, true) => problems.push(format!(
+                "{at}: neither `expect` nor `green` — the case does not say what it expects"
+            )),
+            _ => {}
+        }
         if case.why.trim().is_empty() {
             problems.push(format!("{at}: empty `why` — a case without a reason rots"));
         }
         if !cfg.target.contains_key(&case.target) {
             problems.push(format!("{at}: unknown target `{}`", case.target));
         }
-        if case.compare == Compare::Regex
+        if !case.green
+            && case.compare == Compare::Regex
             && let Err(e) = regex::RegexBuilder::new(&case.expect)
                 .case_insensitive(true)
                 .build()

@@ -9,6 +9,7 @@ fn case(id: &str) -> Case {
         expect: "x".into(),
         compare: Compare::Regex,
         why: "x".into(),
+        green: false,
         levers: vec![Lever::Sed {
             file: "a.nix".into(),
             sed: "s|a|b|".into(),

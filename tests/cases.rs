@@ -209,3 +209,71 @@ levers = [ {{ file = "f.nix", sed = "s|a|b|" }} ]
 "#
     )
 }
+
+#[test]
+fn a_case_may_demand_that_the_check_stays_green() {
+    let dir = tempdir();
+    write(
+        &dir,
+        "a.toml",
+        r#"
+[[case]]
+id = "129c"
+name = "Gequotetes Here-Dokument bleibt gruen"
+target = "server"
+green = true
+why = "Die Pruefung darf hier NICHT anschlagen."
+levers = [ { file = "f.nix", sed = "s|a|b|" } ]
+"#,
+    );
+    let cases = cases::load_dir(&dir).unwrap();
+    assert!(cases[0].green);
+    assert!(cases::validate(&cases, &config()).is_empty());
+}
+
+#[test]
+fn green_and_expect_are_mutually_exclusive() {
+    // A case either names the message it expects, or it says the check must
+    // stay green. Both at once means nobody decided which.
+    let dir = tempdir();
+    write(
+        &dir,
+        "a.toml",
+        r#"
+[[case]]
+id = "1"
+name = "x"
+target = "server"
+green = true
+expect = "eine Meldung"
+why = "x"
+levers = [ { file = "f.nix", sed = "s|a|b|" } ]
+"#,
+    );
+    let cases = cases::load_dir(&dir).unwrap();
+    let problems = cases::validate(&cases, &config());
+    assert!(problems.iter().any(|p| p.contains("green")), "{problems:?}");
+}
+
+#[test]
+fn a_case_without_green_needs_an_expect() {
+    let dir = tempdir();
+    write(
+        &dir,
+        "a.toml",
+        r#"
+[[case]]
+id = "1"
+name = "x"
+target = "server"
+why = "x"
+levers = [ { file = "f.nix", sed = "s|a|b|" } ]
+"#,
+    );
+    let cases = cases::load_dir(&dir).unwrap();
+    let problems = cases::validate(&cases, &config());
+    assert!(
+        problems.iter().any(|p| p.contains("expect")),
+        "{problems:?}"
+    );
+}

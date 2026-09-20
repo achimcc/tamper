@@ -49,6 +49,7 @@ fn case_with(id: &str, sed: &str) -> Case {
         expect: "x".into(),
         compare: Compare::Regex,
         why: "x".into(),
+        green: false,
         levers: vec![Lever::Sed {
             file: "a.conf".into(),
             sed: sed.into(),

@@ -27,6 +27,7 @@ fn a_case() -> Case {
         expect: "ueber einem eigenen Mount".into(),
         compare: Compare::Regex,
         why: "x".into(),
+        green: false,
         levers: vec![Lever::Sed {
             file: "lib/gaeste.nix".into(),
             sed: "s|a|b|".into(),

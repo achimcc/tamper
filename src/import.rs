@@ -383,6 +383,9 @@ fn emit(out: &mut Imported, levers: &mut Vec<Lever>, pending: &mut Vec<Leftover>
     out.cases.push(Case {
         id,
         name: d.name,
+        // The shell driver has no way to say "this must stay green" through
+        // `faellt_mit`; those cases are hand-written and ported by hand.
+        green: false,
         target: d.target,
         expect,
         compare: d.compare,
@@ -531,7 +534,11 @@ pub fn to_toml(cases: &[Case]) -> String {
         out.push_str(&format!("id = {}\n", basic(&c.id)));
         out.push_str(&format!("name = {}\n", basic(&c.name)));
         out.push_str(&format!("target = {}\n", basic(&c.target)));
-        out.push_str(&format!("expect = {}\n", basic(&c.expect)));
+        if c.green {
+            out.push_str("green = true\n");
+        } else {
+            out.push_str(&format!("expect = {}\n", basic(&c.expect)));
+        }
         if c.compare == Compare::Literal {
             out.push_str("compare = \"literal\"\n");
         }

@@ -184,10 +184,15 @@ fn judge(case: &Case, ctx: &Ctx, attr: &str, tree: &Tree) -> (Verdict, String) {
     }
 
     match build::run(&tree.path, attr, &ctx.cfg.lotse.build_class) {
-        Build::Green => (Verdict::NotRed, String::new()),
         Build::Network => (Verdict::Network, String::new()),
         Build::QueueTimeout => (Verdict::QueueTimeout, String::new()),
         Build::Failed(e) => (Verdict::QueueTimeout, e),
+        // A case that demands GREEN reads the same two outcomes the other way
+        // round. Reporting a fired check as `not-red` here would say the
+        // reverse of what happened.
+        Build::Green if case.green => (Verdict::Ok, String::new()),
+        Build::Red(text) if case.green => (Verdict::FalseAlarm, first_errors(&text)),
+        Build::Green => (Verdict::NotRed, String::new()),
         Build::Red(text) => {
             if message::matches(&text, &case.expect, case.compare) {
                 (Verdict::Ok, String::new())
