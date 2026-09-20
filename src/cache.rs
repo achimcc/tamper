@@ -49,6 +49,20 @@ impl Cache {
         })
     }
 
+    /// OPEN: the key reads its files from the WORKING TREE (`self.repo`),
+    /// while the case is tested against `--commit`. As long as the two carry
+    /// the same files that is the same thing — and on a normal run, where
+    /// `--commit` defaults to HEAD and the tree is clean, it always is.
+    ///
+    /// It stops being the same thing during a long acceptance, where the run
+    /// is pinned to one commit for days while the branch moves on: merging
+    /// `origin/main` into the worktree changes `checks.nix`, so the key would
+    /// describe a tree that was never built. The entry would still say `ok`.
+    ///
+    /// The fix is to read the key's files from the commit
+    /// (`git show <sha>:<path>`) whenever `--commit` is given. Not done here
+    /// because it would change the tool in the middle of the run that found
+    /// it; found 2026-09-20 while deciding whether to merge mid-acceptance.
     pub fn key(&self, case: &Case, definitions: &[String]) -> Result<String, String> {
         let mut h = Sha256::new();
         h.update(b"tamper-v1\0");
