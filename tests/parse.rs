@@ -65,3 +65,21 @@ fn a_deleted_file_is_skipped_and_not_an_error() {
         None
     );
 }
+
+#[test]
+#[ignore = "needs nix-instantiate; run with --include-ignored"]
+fn a_free_variable_is_not_a_parse_error() {
+    // Measured 2026-09-20: `nix-instantiate --parse` resolves variables
+    // inside string interpolations, so a syntactically perfect file with a
+    // free `pkgs` fails with "undefined variable". That is an EVALUATION
+    // error; the file parses. Reporting it as broken-nix would call a valid
+    // case broken — which is exactly the misattribution this verdict exists
+    // to prevent, only pointing the other way.
+    let dir = sandbox();
+    std::fs::write(
+        dir.join("a.nix"),
+        "{ probe = \"${pkgs.coreutils}/bin/printf\"; }\n",
+    )
+    .unwrap();
+    assert_eq!(parse::check(&dir, &[PathBuf::from("a.nix")]).unwrap(), None);
+}

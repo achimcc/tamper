@@ -152,6 +152,47 @@ faellt_mit "zwei Hebel" "eine Meldung"
 }
 
 #[test]
+fn a_quoted_argument_may_span_many_lines() {
+    // All eight router_fall calls carry their python lever as a single-quoted
+    // string over several real newlines. Joining only backslash-continuations
+    // left them unparseable — and because `router_fall` is not a mutating
+    // command, they were not even reported as leftovers. Eight cases gone
+    // without a trace, which is the one thing this importer must never do.
+    let text = "
+# 11e. Ein ungueltiger Wert in der Firewall.
+router_fall hosts/router/konfig.nix \"Router: ungueltige Zonen-Policy\" \\
+  \"PROBE-NEIN: fw4 check\" '
+import sys; p = sys.argv[1]; s = open(p).read()
+open(p, \"w\").write(s.replace(\"REJECT\", \"FOO\"))'
+";
+    let got = parse_script(text);
+    assert!(got.leftovers.is_empty(), "{:?}", got.leftovers);
+    assert_eq!(got.cases.len(), 1);
+    assert_eq!(got.cases[0].id, "11e");
+    assert_eq!(got.cases[0].target, "router-probe");
+    assert_eq!(got.cases[0].compare, Compare::Literal);
+    match &got.cases[0].levers[0] {
+        Lever::Script { script, files } => {
+            assert!(script.contains("import sys"), "{script}");
+            assert_eq!(files, &vec!["hosts/router/konfig.nix".to_string()]);
+        }
+        other => panic!("expected a script lever, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_argument_that_never_closes_is_reported_and_not_skipped() {
+    let text = "
+# 90. Ein Hebel mit offenem Anfuehrungszeichen.
+python3 -c 'das hoert nie auf
+faellt_mit \"x\" \"y\"
+";
+    let got = parse_script(text);
+    assert!(got.cases.is_empty());
+    assert!(!got.leftovers.is_empty(), "an unclosed quote must be named");
+}
+
+#[test]
 fn case_numbers_grew_more_varied_than_digits_plus_one_letter() {
     // Measured on the real script: reading only `[0-9]+[a-z]?\.` left 258 of
     // 505 cases without a number. `9k2.` is a real heading, and

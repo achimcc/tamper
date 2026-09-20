@@ -58,9 +58,12 @@ pub fn parse_script(text: &str) -> Imported {
     let mut pending: Vec<Leftover> = Vec::new();
     let mut in_function = false;
 
-    for (i, raw) in joined.lines().enumerate() {
-        let line = raw.trim_end();
+    let zeilen: Vec<&str> = joined.lines().collect();
+    let mut i = 0;
+    while i < zeilen.len() {
         let no = i + 1;
+        let line = zeilen[i].trim_end();
+        i += 1;
 
         if in_function {
             if line.starts_with('}') {
@@ -85,14 +88,26 @@ pub fn parse_script(text: &str) -> Imported {
             continue;
         }
 
-        let Ok(argv) = tokenize(line) else {
-            if is_mutating(line) {
-                pending.push(Leftover {
-                    line: no,
-                    snippet: line.trim().to_string(),
-                    reason: "cannot be tokenised (unbalanced quotes)".into(),
-                });
-            }
+        // A QUOTED ARGUMENT MAY SPAN MANY LINES, and all eight `router_fall`
+        // calls use that: their python lever is one single-quoted string over
+        // several real newlines. Reading line by line left them unparseable —
+        // and since `router_fall` is not a mutating command, they were not
+        // even reported. Eight cases gone without a trace.
+        let mut befehl = line.to_string();
+        let mut argv = tokenize(&befehl);
+        while argv.is_err() && i < zeilen.len() && i - no < 60 {
+            befehl.push('\n');
+            befehl.push_str(zeilen[i]);
+            i += 1;
+            argv = tokenize(&befehl);
+        }
+
+        let Ok(argv) = argv else {
+            pending.push(Leftover {
+                line: no,
+                snippet: befehl.lines().next().unwrap_or("").trim().to_string(),
+                reason: "cannot be tokenised: a quote never closes".into(),
+            });
             continue;
         };
         let Some(head) = argv.first().map(String::as_str) else {
@@ -112,16 +127,21 @@ pub fn parse_script(text: &str) -> Imported {
                 let found = as_levers(&argv);
                 if !found.is_empty() {
                     levers.extend(found);
-                } else if is_mutating(line) {
+                } else if is_mutating(&befehl) {
                     pending.push(Leftover {
                         line: no,
-                        snippet: line.trim().to_string(),
+                        snippet: befehl.lines().next().unwrap_or("").trim().to_string(),
                         reason: "mutating command in a form that is not a lever".into(),
                     });
                 }
             }
         }
     }
+    // WHAT IS LEFT OVER AT THE END IS STILL LEFT OVER. `pending` is drained
+    // by the case that follows it; a mutating line with no case after it
+    // would otherwise be dropped here, silently, in the very function whose
+    // job is to drop nothing.
+    out.leftovers.extend(pending);
     out
 }
 

@@ -23,12 +23,19 @@ pub fn check(tree: &Path, files: &[PathBuf]) -> Result<Option<String>, String> {
             .output()
             .map_err(|e| format!("cannot run nix-instantiate: {e}"))?;
         if !out.status.success() {
-            let first = String::from_utf8_lossy(&out.stderr)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // ONLY A SYNTAX ERROR COUNTS. Measured 2026-09-20:
+            // `nix-instantiate --parse` resolves variables inside string
+            // interpolations, so a syntactically perfect file with a free
+            // `pkgs` fails with "undefined variable". That file parses; it
+            // just cannot be evaluated on its own, and a case may create
+            // exactly such a snippet on purpose for a check that only reads
+            // source text. Calling it broken-nix would be this verdict's own
+            // misattribution, pointing the other way.
+            if !stderr.contains("syntax error") {
+                continue;
+            }
+            let first = stderr.lines().next().unwrap_or("").trim().to_string();
             return Ok(Some(format!("{} does not parse: {first}", file.display())));
         }
     }
