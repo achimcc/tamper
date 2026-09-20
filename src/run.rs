@@ -260,7 +260,7 @@ fn first_errors(text: &str) -> String {
             l.contains("error") || l.contains("assertion")
         })
         .take(3)
-        .map(|l| format!("        {}", l.trim()))
+        .map(|l| l.trim().to_string())
         .collect::<Vec<_>>()
         .join("\n")
 }
