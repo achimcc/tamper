@@ -284,6 +284,10 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         run::all_with_retry(&chosen, &ctx, o.jobs)
     };
 
+    // Das eigene Laufverzeichnis wieder abraeumen: Die Baeume darin sind
+    // einzeln entfernt, was bleibt, ist die leere Huelle.
+    let _ = std::fs::remove_dir_all(&ctx.scratch);
+
     let summary = Summary::of(&outcomes);
     print!("{}", summary.render());
     Ok(ExitCode::from(summary.exit_code()))
@@ -307,11 +311,20 @@ fn head(repo: &Path) -> Result<String, String> {
 
 /// Throwaway worktrees live outside the repository, so a run cannot be
 /// mistaken for work in progress.
+///
+/// PER RUN, NOT PER REPOSITORY. The slot paths used to depend on the repo
+/// alone, so two runs at once shared `slot-0`…`slot-n` and removed each
+/// other's trees. The result was a FALSE `dead-lever` — a finding pointing
+/// at the case, for something the case had nothing to do with. On a
+/// workstation with a dozen sessions that is not an edge case.
 fn scratch_dir(repo: &Path) -> Result<PathBuf, String> {
     let base = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("tamper").join(slug(repo));
+    let dir = base
+        .join("tamper")
+        .join(slug(repo))
+        .join(format!("run-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     Ok(dir)
 }
