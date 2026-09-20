@@ -199,7 +199,39 @@ fn import(file: &Path) -> Result<ExitCode, String> {
     }
 }
 
+/// Every external tool a run needs, asked for once before the first case.
+///
+/// Without this, a missing tool is discovered 525 times over and reads like
+/// a finding about the cases. `nix-instantiate` was exactly that: absent, it
+/// turned every case into `broken-nix`.
+fn preflight(dry: bool) -> Result<(), String> {
+    let needed: &[&str] = if dry {
+        &["git", "sed", "perl", "nix-instantiate"]
+    } else {
+        &["git", "sed", "perl", "nix-instantiate", "nix", "lotse"]
+    };
+    let missing: Vec<&str> = needed
+        .iter()
+        .copied()
+        .filter(|tool| {
+            Command::new(tool)
+                .arg("--version")
+                .output()
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        })
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "these tools are missing, and without them a run says nothing: {}",
+            missing.join(", ")
+        ))
+    }
+}
+
 fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
+    preflight(dry)?;
     let (root, cfg, cases) = load(o)?;
     let repo = root
         .canonicalize()

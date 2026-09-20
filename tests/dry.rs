@@ -6,7 +6,7 @@ use tamper::config::Config;
 use tamper::run::{self, Ctx};
 use tamper::verdict::Verdict;
 
-/// A repo with a.nix, plus a Ctx whose config knows one target.
+/// A repo with a.conf, plus a Ctx whose config knows one target.
 /// `dry` never builds, so the target attribute is never used.
 fn fixture() -> (Ctx, Vec<Case>) {
     let repo = git_fixture();
@@ -18,7 +18,7 @@ cases = "sabotage"
 [target.server]
 attr = ".#nope"
 [cache]
-definitions = ["a.nix"]
+definitions = ["a.conf"]
 [lotse]
 run_class = "pruefungen"
 build_class = "eval"
@@ -50,7 +50,7 @@ fn case_with(id: &str, sed: &str) -> Case {
         compare: Compare::Regex,
         why: "x".into(),
         levers: vec![Lever::Sed {
-            file: "a.nix".into(),
+            file: "a.conf".into(),
             sed: sed.into(),
         }],
     }
@@ -63,8 +63,8 @@ fn fixture_with_script_lever() -> (Ctx, Vec<Case>) {
     cases.push(Case {
         id: "skript".into(),
         levers: vec![Lever::Script {
-            script: "printf '{ }\\n' > neu.nix".into(),
-            files: vec!["neu.nix".into()],
+            script: "printf '{ }\\n' > neu.conf".into(),
+            files: vec!["neu.conf".into()],
         }],
         ..case_with("skript", "s|a|b|")
     });
@@ -94,7 +94,7 @@ fn git_fixture() -> std::path::PathBuf {
     git(&["config", "user.email", "t@example.invalid"]);
     git(&["config", "user.name", "Test"]);
     git(&["config", "commit.gpgsign", "false"]);
-    std::fs::write(dir.join("a.nix"), "{ x = 1; }\n").unwrap();
+    std::fs::write(dir.join("a.conf"), "{ x = 1; }\n").unwrap();
     git(&["add", "-A"]);
     git(&["commit", "--quiet", "-m", "init"]);
     dir

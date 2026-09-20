@@ -174,7 +174,12 @@ fn judge(case: &Case, ctx: &Ctx, attr: &str, tree: &Tree) -> (Verdict, String) {
     };
     match parse::check(&tree.path, &changed) {
         Ok(Some(msg)) => return (Verdict::BrokenNix, msg),
-        Err(e) => return (Verdict::BrokenNix, e),
+        // COULD NOT MEASURE is not a finding. If nix-instantiate cannot be
+        // started, nothing was learned about this case — calling it
+        // `broken-nix` would report all 525 cases as broken because one tool
+        // is missing. `main` checks for the tools before the first case, so
+        // this path means one vanished mid-run.
+        Err(e) => return (Verdict::QueueTimeout, format!("CANNOT MEASURE: {e}")),
         Ok(None) => {}
     }
 
@@ -242,7 +247,8 @@ fn dry_judge(case: &Case, tree: &Tree) -> (Verdict, String) {
             Err(e) => (Verdict::DeadLever, e),
             Ok(changed) => match parse::check(&tree.path, &changed) {
                 Ok(Some(msg)) => (Verdict::BrokenNix, msg),
-                Err(e) => (Verdict::BrokenNix, e),
+                // See `judge`: a tool that will not start is not a finding.
+                Err(e) => (Verdict::QueueTimeout, format!("CANNOT MEASURE: {e}")),
                 // The lever hits and the result parses. This probe says no
                 // more than that; whether the check then goes red needs a build.
                 Ok(None) => (Verdict::Ok, String::new()),
