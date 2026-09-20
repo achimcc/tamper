@@ -1,3 +1,4 @@
+pub mod build;
 pub mod cases;
 pub mod config;
 pub mod lever;
