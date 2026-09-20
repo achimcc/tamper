@@ -1,0 +1,20 @@
+[package]
+name = "tamper"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Mutation-test your build-time assertions: break the input on purpose and check that the check goes red"
+repository = "https://github.com/achimcc/tamper"
+readme = "README.md"
+keywords = ["nix", "nixos", "mutation-testing", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+lexopt = "0.3"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+
+[profile.release]
+lto = true
