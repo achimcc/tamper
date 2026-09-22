@@ -70,7 +70,7 @@ pub fn baseline(ctx: &Ctx, targets: &[String]) -> Result<(), String> {
                     first_errors(&text)
                 ));
             }
-            Build::Network => return Err(format!("baseline for `{name}`: network, no ruling")),
+            Build::Network(_) => return Err(format!("baseline for `{name}`: network, no ruling")),
             Build::QueueTimeout => {
                 return Err(format!("baseline for `{name}`: queue timed out, no ruling"));
             }
@@ -172,34 +172,64 @@ fn judge(case: &Case, ctx: &Ctx, attr: &str, tree: &Tree) -> (Verdict, String) {
         Ok(c) => c,
         Err(e) => return (Verdict::DeadLever, e),
     };
-    match parse::check(&tree.path, &changed) {
-        Ok(Some(msg)) => return (Verdict::BrokenNix, msg),
+    // A syntax error found here is NOT a verdict yet — see `verdict_of`.
+    let broken = match parse::check(&tree.path, &changed) {
+        Ok(b) => b,
         // COULD NOT MEASURE is not a finding. If nix-instantiate cannot be
         // started, nothing was learned about this case — calling it
         // `broken-nix` would report all 525 cases as broken because one tool
         // is missing. `main` checks for the tools before the first case, so
         // this path means one vanished mid-run.
         Err(e) => return (Verdict::QueueTimeout, format!("CANNOT MEASURE: {e}")),
-        Ok(None) => {}
-    }
+    };
 
-    match build::run(&tree.path, attr, &ctx.cfg.lotse.build_class) {
-        Build::Network => (Verdict::Network, String::new()),
+    let build = build::run(&tree.path, attr, &ctx.cfg.lotse.build_class);
+    verdict_of(case, build, broken)
+}
+
+/// From the build's outcome to the verdict. A function of its inputs alone,
+/// so it can be tested against REAL output (`tests/antworten.rs`).
+///
+/// Two rules in here were learned from the homeserver acceptance, 2026-09-22:
+///
+/// **The expected message beats the network guess.** Case 174 lost its
+/// ruling to lotse: the assertion it waits for QUOTES an nftables error
+/// ("Could not resolve hostname"), lotse's retry pattern matched the quote,
+/// retried four times and exited 201. The expected message stood in every
+/// attempt. An assertion message in the output means evaluation got as far
+/// as the assertion — no network failure produces the sentence a case is
+/// waiting for. So it is a ruling. A case that demands GREEN has no message
+/// to wait for; for it the network stays no ruling.
+///
+/// **A syntax error is a verdict only when the check did NOT fire.** Case 199
+/// creates a `.nix` file on purpose that a text-scanning check reads with
+/// `grep` and never parses. Judging `broken-nix` before the build called a
+/// working check broken. Now the build runs: if it fails with the expected
+/// message, the check fired and the broken file did not matter; if it fails
+/// with a different one, the parser is the likelier author — `broken-nix`,
+/// the palette case. Costs one build per broken case, of which the inventory
+/// has one.
+pub fn verdict_of(case: &Case, build: Build, broken: Option<String>) -> (Verdict, String) {
+    let expected = |text: &str| message::matches(text, &case.expect, case.compare);
+    match build {
+        Build::Network(text) if !case.green && expected(&text) => (Verdict::Ok, String::new()),
+        Build::Network(_) => (Verdict::Network, String::new()),
         Build::QueueTimeout => (Verdict::QueueTimeout, String::new()),
         Build::Failed(e) => (Verdict::QueueTimeout, e),
         // A case that demands GREEN reads the same two outcomes the other way
         // round. Reporting a fired check as `not-red` here would say the
         // reverse of what happened.
         Build::Green if case.green => (Verdict::Ok, String::new()),
-        Build::Red(text) if case.green => (Verdict::FalseAlarm, first_errors(&text)),
-        Build::Green => (Verdict::NotRed, String::new()),
-        Build::Red(text) => {
-            if message::matches(&text, &case.expect, case.compare) {
-                (Verdict::Ok, String::new())
-            } else {
-                (Verdict::OtherMessage, first_errors(&text))
-            }
+        Build::Red(_) if case.green && broken.is_some() => {
+            (Verdict::BrokenNix, broken.unwrap_or_default())
         }
+        Build::Red(text) if case.green => (Verdict::FalseAlarm, first_errors(&text)),
+        // Green although a sabotaged file does not parse: the target never
+        // evaluated that file. What is left is the plain finding.
+        Build::Green => (Verdict::NotRed, String::new()),
+        Build::Red(text) if expected(&text) => (Verdict::Ok, String::new()),
+        Build::Red(_) if broken.is_some() => (Verdict::BrokenNix, broken.unwrap_or_default()),
+        Build::Red(text) => (Verdict::OtherMessage, first_errors(&text)),
     }
 }
 
@@ -251,7 +281,15 @@ fn dry_judge(case: &Case, tree: &Tree) -> (Verdict, String) {
         Ok(true) => match tree.changed_files() {
             Err(e) => (Verdict::DeadLever, e),
             Ok(changed) => match parse::check(&tree.path, &changed) {
-                Ok(Some(msg)) => (Verdict::BrokenNix, msg),
+                // Without a build this is as far as the probe can see. The
+                // full run may still call it `ok` — a check that only reads
+                // the file as text fires anyway (`verdict_of`).
+                Ok(Some(msg)) => (
+                    Verdict::BrokenNix,
+                    format!(
+                        "{msg} (dry run: a check that reads the file as text may fire anyway — `tamper run` decides)"
+                    ),
+                ),
                 // See `judge`: a tool that will not start is not a finding.
                 Err(e) => (Verdict::QueueTimeout, format!("CANNOT MEASURE: {e}")),
                 // The lever hits and the result parses. This probe says no

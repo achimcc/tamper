@@ -28,8 +28,11 @@ pub enum Outcome {
     Green,
     /// The build failed; the output is kept for the message comparison.
     Red(String),
-    /// DNS or a download was gone. No ruling.
-    Network,
+    /// lotse (or the pattern below) blamed the network. No ruling BY ITSELF:
+    /// the output is kept, because the evaluation may have got as far as the
+    /// assertion the case is waiting for — then it is a ruling after all
+    /// (`run::verdict_of`).
+    Network(String),
     /// The build never started. No ruling.
     QueueTimeout,
     /// tamper itself could not run the build.
@@ -39,8 +42,15 @@ pub enum Outcome {
 /// Patterns lotse itself retries on. We recognise them a second time in case
 /// a raw exit code ever reaches us, so a network failure can never be
 /// counted as a finding.
+///
+/// `Could not resolve host:` WITH the colon, which is how curl — and nix
+/// through it — words a DNS failure. Without it the pattern also matched
+/// "Could not resolve hostname", and that phrase stands in the homeserver's
+/// own assertion text: check 174 quotes the nftables error it guards against.
+/// Every "network failure" lotse ever retried on that machine (21 retries,
+/// 2026-09-22) was that quotation.
 const NETWORK: [&str; 3] = [
-    "Could not resolve host",
+    "Could not resolve host:",
     "unable to download",
     "daemon disconnected",
 ];
@@ -49,8 +59,8 @@ pub fn classify(exit: i32, output: &str) -> Outcome {
     match exit {
         0 => Outcome::Green,
         200 => Outcome::QueueTimeout,
-        201 => Outcome::Network,
-        _ if NETWORK.iter().any(|p| output.contains(p)) => Outcome::Network,
+        201 => Outcome::Network(output.to_string()),
+        _ if NETWORK.iter().any(|p| output.contains(p)) => Outcome::Network(output.to_string()),
         _ => Outcome::Red(output.to_string()),
     }
 }

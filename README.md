@@ -32,8 +32,8 @@ The point of the list is a distinction a shell loop tends to lose.
 | `not-red` | the build was green: the check does not fire | yes |
 | `false-alarm` | the build failed, although the case says it must stay green | yes |
 | `other-message` | the build failed, but with a different message | yes |
-| `broken-nix` | the edited file no longer parses | no |
-| `network` | DNS or a download was gone — **no ruling** | — |
+| `broken-nix` | the edited file no longer parses, and the build failed with another message | yes |
+| `network` | DNS or a download was gone, and the expected message is not there — **no ruling** | — |
 | `queue-timeout` | the build never started — **no ruling** | — |
 
 **One of them reads the other way round.** Most cases break something and
@@ -46,12 +46,21 @@ would say the reverse of what happened.
 **Two of them are not results.** If the network was gone, or the build never
 started, nothing was learned about the tree, and counting that as "all good"
 is the failure this tool exists to prevent. They get their own exit code.
+One exception, and it came from a real run: if the output carries the message
+the case is waiting for, evaluation got as far as the assertion, and that is
+a ruling — whatever the network patterns say. A check whose own text *quotes*
+a DNS error (`Could not resolve hostname`) lost its ruling that way.
 
-**Two of them cost nothing.** A lever that no longer hits, and an edit that
-destroys the syntax, are both decided before anything is built. The second one
-matters more than it looks: when the file no longer parses, the *parser*
-fails, long before any assertion runs — so the case proves that broken input
-does not build, not that the check works.
+**One of them costs nothing.** A lever that no longer hits is decided before
+anything is built.
+
+**`broken-nix` needs the build to be sure.** When the edited file no longer
+parses, the *parser* usually fails long before any assertion runs — so the
+case proves that broken input does not build, not that the check works. But
+not every check parses what it reads: one that scans files as text fires on a
+broken file just the same. So the syntax error is found first and turned into
+a verdict only if the build then fails with a *different* message. `tamper
+dry` cannot build, and says so next to every syntax error it reports.
 
 ## Cases
 
@@ -103,7 +112,9 @@ ticks for nothing. So a red baseline produces no verdicts at all.
 
 Re-running every case on every commit is the reason nobody runs them. The
 result cache keys each ruling by the case itself, the files it edits, and the
-files that define the checks. Everything else in the tree is assumed unable to
+files that define the checks — all read from the commit under test
+(`--commit`, default `HEAD`), never from the working tree, because the commit
+is what gets built. Everything else in the tree is assumed unable to
 flip a ruling — a **named assumption**, documented with the counter-example
 that breaks it, and held in place by three guards: only `ok` is stored, the
 report names the cache's *coverage* and the age of its oldest entry rather

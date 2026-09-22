@@ -204,4 +204,3 @@ fn only_ok_is_stored_and_it_comes_back_with_an_age() {
     let hit = c.get(&key).expect("an ok must come back");
     assert_eq!(hit.age_days, 0);
 }
-

@@ -1,0 +1,294 @@
+lotse: class=eval target=- cwd=/run/user/1000/tamper/-home-achim-Projects-homeserver--claude-worktrees-tamper/run-2538585/slot-0 command=["nix", "build", "--no-link", ".#nixosConfigurations.server.config.system.build.toplevel"]
+warning: Git tree '/run/user/1000/tamper/-home-achim-Projects-homeserver--claude-worktrees-tamper/run-2538585/slot-0' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - scripts/inventar.env ist veraltet — 'just inventar-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt (Muster: tofu/config.tf.json).
+       Sie reist per scp neben die Pruefskripte und entscheidet DORT, welche
+       Gaeste ueberhaupt geprueft werden. Weicht sie ab, prueft 'just gast'
+       etwas anderes, als im Repo steht — und meldet trotzdem gruen.
+
+       Erzeugen mit:  just inventar-gen
+       Danach:        git add scripts/inventar.env
+
+       - docs/topologie.md ist veraltet — 'just topologie-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt, dasselbe Muster wie
+       scripts/inventar.env darueber. Sie zeigt die Zonen, die Adressen und
+       JEDE Zonenkante mit ihrer Begruendung.
+
+       WARUM DAS EINE PRUEFUNG WERT IST: Ein veraltetes Diagramm meldet sich
+       nicht. Es bleibt lesbar, es bleibt huebsch, und es beantwortet die
+       Frage 'darf dieser Gast den erreichen' weiter mit der Antwort von
+       vorgestern. Ein Bild, dem man nicht trauen kann, ist schlechter als
+       keines — man glaubt ihm trotzdem.
+
+       Erzeugen mit:  just topologie-gen
+       Danach:        git add docs/topologie.md
+
+       - Diese Zonennummern koennen kein drittes Oktett sein: obsi = 999
+
+       `lib/gaeste.nix` baut daraus `10.0.<zone>.<hostteil>`. Ueber 255 gibt
+       es diese Adresse nicht — und die EVALUATION merkt davon nichts. Am
+       2026-09-12 stand `dmarc = 260` im Baum, beide Hosts evaluierten mit
+       Exit 0, und erst der Bau der nftables-Regeln fiel um:
+
+         ruleset.conf:340: Could not resolve hostname: Name or service not known
+         ip daddr 10.0.260.10 tcp dport { 9100 } ...
+
+       nftables nimmt ein ungueltiges Adressliteral als HOSTNAMEN. Die
+       Meldung zeigt damit auf DNS und nicht auf die Zahl.
+
+       Die IPv6-Seite faengt es nicht: `fd00:260::` ist gueltig.
+
+       Abhilfe: eine freie Nummer unter 256 waehlen — und KEINE
+       wiederverwenden, die schon einmal vergeben war. Die Zehnerschritte
+       sind mit 250 aufgebraucht; ab da wird in Einerschritten gezaehlt.
+lotse: network failure, retrying in 30s (attempt 2 of 4)
+warning: Git tree '/run/user/1000/tamper/-home-achim-Projects-homeserver--claude-worktrees-tamper/run-2538585/slot-0' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - scripts/inventar.env ist veraltet — 'just inventar-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt (Muster: tofu/config.tf.json).
+       Sie reist per scp neben die Pruefskripte und entscheidet DORT, welche
+       Gaeste ueberhaupt geprueft werden. Weicht sie ab, prueft 'just gast'
+       etwas anderes, als im Repo steht — und meldet trotzdem gruen.
+
+       Erzeugen mit:  just inventar-gen
+       Danach:        git add scripts/inventar.env
+
+       - docs/topologie.md ist veraltet — 'just topologie-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt, dasselbe Muster wie
+       scripts/inventar.env darueber. Sie zeigt die Zonen, die Adressen und
+       JEDE Zonenkante mit ihrer Begruendung.
+
+       WARUM DAS EINE PRUEFUNG WERT IST: Ein veraltetes Diagramm meldet sich
+       nicht. Es bleibt lesbar, es bleibt huebsch, und es beantwortet die
+       Frage 'darf dieser Gast den erreichen' weiter mit der Antwort von
+       vorgestern. Ein Bild, dem man nicht trauen kann, ist schlechter als
+       keines — man glaubt ihm trotzdem.
+
+       Erzeugen mit:  just topologie-gen
+       Danach:        git add docs/topologie.md
+
+       - Diese Zonennummern koennen kein drittes Oktett sein: obsi = 999
+
+       `lib/gaeste.nix` baut daraus `10.0.<zone>.<hostteil>`. Ueber 255 gibt
+       es diese Adresse nicht — und die EVALUATION merkt davon nichts. Am
+       2026-09-12 stand `dmarc = 260` im Baum, beide Hosts evaluierten mit
+       Exit 0, und erst der Bau der nftables-Regeln fiel um:
+
+         ruleset.conf:340: Could not resolve hostname: Name or service not known
+         ip daddr 10.0.260.10 tcp dport { 9100 } ...
+
+       nftables nimmt ein ungueltiges Adressliteral als HOSTNAMEN. Die
+       Meldung zeigt damit auf DNS und nicht auf die Zahl.
+
+       Die IPv6-Seite faengt es nicht: `fd00:260::` ist gueltig.
+
+       Abhilfe: eine freie Nummer unter 256 waehlen — und KEINE
+       wiederverwenden, die schon einmal vergeben war. Die Zehnerschritte
+       sind mit 250 aufgebraucht; ab da wird in Einerschritten gezaehlt.
+lotse: network failure, retrying in 30s (attempt 3 of 4)
+warning: Git tree '/run/user/1000/tamper/-home-achim-Projects-homeserver--claude-worktrees-tamper/run-2538585/slot-0' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - scripts/inventar.env ist veraltet — 'just inventar-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt (Muster: tofu/config.tf.json).
+       Sie reist per scp neben die Pruefskripte und entscheidet DORT, welche
+       Gaeste ueberhaupt geprueft werden. Weicht sie ab, prueft 'just gast'
+       etwas anderes, als im Repo steht — und meldet trotzdem gruen.
+
+       Erzeugen mit:  just inventar-gen
+       Danach:        git add scripts/inventar.env
+
+       - docs/topologie.md ist veraltet — 'just topologie-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt, dasselbe Muster wie
+       scripts/inventar.env darueber. Sie zeigt die Zonen, die Adressen und
+       JEDE Zonenkante mit ihrer Begruendung.
+
+       WARUM DAS EINE PRUEFUNG WERT IST: Ein veraltetes Diagramm meldet sich
+       nicht. Es bleibt lesbar, es bleibt huebsch, und es beantwortet die
+       Frage 'darf dieser Gast den erreichen' weiter mit der Antwort von
+       vorgestern. Ein Bild, dem man nicht trauen kann, ist schlechter als
+       keines — man glaubt ihm trotzdem.
+
+       Erzeugen mit:  just topologie-gen
+       Danach:        git add docs/topologie.md
+
+       - Diese Zonennummern koennen kein drittes Oktett sein: obsi = 999
+
+       `lib/gaeste.nix` baut daraus `10.0.<zone>.<hostteil>`. Ueber 255 gibt
+       es diese Adresse nicht — und die EVALUATION merkt davon nichts. Am
+       2026-09-12 stand `dmarc = 260` im Baum, beide Hosts evaluierten mit
+       Exit 0, und erst der Bau der nftables-Regeln fiel um:
+
+         ruleset.conf:340: Could not resolve hostname: Name or service not known
+         ip daddr 10.0.260.10 tcp dport { 9100 } ...
+
+       nftables nimmt ein ungueltiges Adressliteral als HOSTNAMEN. Die
+       Meldung zeigt damit auf DNS und nicht auf die Zahl.
+
+       Die IPv6-Seite faengt es nicht: `fd00:260::` ist gueltig.
+
+       Abhilfe: eine freie Nummer unter 256 waehlen — und KEINE
+       wiederverwenden, die schon einmal vergeben war. Die Zehnerschritte
+       sind mit 250 aufgebraucht; ab da wird in Einerschritten gezaehlt.
+lotse: network failure, retrying in 30s (attempt 4 of 4)
+warning: Git tree '/run/user/1000/tamper/-home-achim-Projects-homeserver--claude-worktrees-tamper/run-2538585/slot-0' is dirty
+evaluation warning: The xorg package set has been deprecated, 'xorg.libX11' has been renamed to 'libx11'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXext' has been renamed to 'libxext'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXi' has been renamed to 'libxi'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXrender' has been renamed to 'libxrender'
+evaluation warning: The xorg package set has been deprecated, 'xorg.libXtst' has been renamed to 'libxtst'
+error:
+       … while calling the 'head' builtin
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/attrsets.nix:1717:13:
+         1716|           if length values == 1 || pred here (elemAt values 1) (head values) then
+         1717|             head values
+             |             ^
+         1718|           else
+
+       … while evaluating the attribute 'value'
+         at «github:NixOS/nixpkgs/c5c4a43b0e8056328ec4529f735cabdb8f1942bb?narHash=sha256-u6z9VTZA4Kf3RkHQo9sQI7NI4Ei/uiU9vrMqOiwWP1Y%3D»/lib/modules.nix:1167:7:
+         1166|     // {
+         1167|       value = addErrorContext "while evaluating the option `${showOption loc}':" value;
+             |       ^
+         1168|       inherit (res.defsFinal') highestPrio;
+
+       … while evaluating the option `system.build.toplevel':
+
+       … while evaluating definitions from `/nix/store/vin7xkmskj4k065z1w7bwwwwp4dbfv93-source/nixos/modules/system/activation/top-level.nix':
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error:
+       Failed assertions:
+       - scripts/inventar.env ist veraltet — 'just inventar-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt (Muster: tofu/config.tf.json).
+       Sie reist per scp neben die Pruefskripte und entscheidet DORT, welche
+       Gaeste ueberhaupt geprueft werden. Weicht sie ab, prueft 'just gast'
+       etwas anderes, als im Repo steht — und meldet trotzdem gruen.
+
+       Erzeugen mit:  just inventar-gen
+       Danach:        git add scripts/inventar.env
+
+       - docs/topologie.md ist veraltet — 'just topologie-gen' vergessen?
+
+       Die Datei ist ERZEUGT und eingecheckt, dasselbe Muster wie
+       scripts/inventar.env darueber. Sie zeigt die Zonen, die Adressen und
+       JEDE Zonenkante mit ihrer Begruendung.
+
+       WARUM DAS EINE PRUEFUNG WERT IST: Ein veraltetes Diagramm meldet sich
+       nicht. Es bleibt lesbar, es bleibt huebsch, und es beantwortet die
+       Frage 'darf dieser Gast den erreichen' weiter mit der Antwort von
+       vorgestern. Ein Bild, dem man nicht trauen kann, ist schlechter als
+       keines — man glaubt ihm trotzdem.
+
+       Erzeugen mit:  just topologie-gen
+       Danach:        git add docs/topologie.md
+
+       - Diese Zonennummern koennen kein drittes Oktett sein: obsi = 999
+
+       `lib/gaeste.nix` baut daraus `10.0.<zone>.<hostteil>`. Ueber 255 gibt
+       es diese Adresse nicht — und die EVALUATION merkt davon nichts. Am
+       2026-09-12 stand `dmarc = 260` im Baum, beide Hosts evaluierten mit
+       Exit 0, und erst der Bau der nftables-Regeln fiel um:
+
+         ruleset.conf:340: Could not resolve hostname: Name or service not known
+         ip daddr 10.0.260.10 tcp dport { 9100 } ...
+
+       nftables nimmt ein ungueltiges Adressliteral als HOSTNAMEN. Die
+       Meldung zeigt damit auf DNS und nicht auf die Zahl.
+
+       Die IPv6-Seite faengt es nicht: `fd00:260::` ist gueltig.
+
+       Abhilfe: eine freie Nummer unter 256 waehlen — und KEINE
+       wiederverwenden, die schon einmal vergeben war. Die Zehnerschritte
+       sind mit 250 aufgebraucht; ab da wird in Einerschritten gezaehlt.
+lotse: network failure, not a verdict of the command itself (its exit code was 1)
+lotse: exit=201 attempts=4 waited=0s ran=475s log=/home/achim/.local/state/lotse/logs/20260922-034316-00001442-2541493.log

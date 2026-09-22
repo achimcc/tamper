@@ -15,10 +15,12 @@
 
 use std::path::Path;
 
-use tamper::build::{classify, Outcome};
-use tamper::cases::Compare;
+use tamper::build::{Outcome, classify};
+use tamper::cases::{Case, Compare, Lever};
 use tamper::message::matches;
 use tamper::parse::from_stderr;
+use tamper::run::verdict_of;
+use tamper::verdict::Verdict;
 
 fn antwort(name: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -34,7 +36,11 @@ fn antwort(name: &str) -> String {
 fn a_real_assertion_matches_its_pattern_with_a_dot_for_a_backtick() {
     let out = antwort("assertion-scope-mit-backtick.txt");
     assert!(out.contains("gibt den `email`-Scope nicht frei"));
-    assert!(matches(&out, "gibt den .email.-Scope nicht frei", Compare::Regex));
+    assert!(matches(
+        &out,
+        "gibt den .email.-Scope nicht frei",
+        Compare::Regex
+    ));
     // And the substring compare would have called this healthy check dead.
     assert!(!matches(
         &out,
@@ -137,4 +143,115 @@ fn the_builder_prefix_survives_normalising() {
 fn an_undefined_variable_is_not_broken_nix() {
     let err = "error: undefined variable 'pkgs'\n       at /tmp/x.nix:3:5:\n";
     assert!(from_stderr(Path::new("x.nix"), err).is_none());
+}
+
+fn case_expecting(expect: &str) -> Case {
+    Case {
+        id: "x".into(),
+        name: "x".into(),
+        target: "server".into(),
+        expect: expect.into(),
+        compare: Compare::Regex,
+        why: "x".into(),
+        green: false,
+        levers: vec![Lever::Sed {
+            file: "lib/gaeste.nix".into(),
+            sed: "s|a|b|".into(),
+        }],
+    }
+}
+
+/// CASE 174, THE WHOLE LOTSE LOG, UNCUT (2026-09-22). The assertion the case
+/// waits for quotes the nftables error it guards against — "Could not
+/// resolve hostname" — and lotse's retry pattern took that quotation for a
+/// DNS failure: four attempts, exit 201. The expected message is in every
+/// one of them. Unlike the other files here, the lotse lines are kept: they
+/// ARE the finding.
+#[test]
+fn case_174_the_expected_message_beats_the_network_guess() {
+    let out = antwort("assertion-zitiert-dns-fehler.txt");
+    assert!(out.contains("lotse: exit=201 attempts=4"));
+    assert_eq!(out.matches("Could not resolve hostname").count(), 4);
+
+    // What lotse told us: the network.
+    let build = classify(201, &out);
+    assert!(matches!(build, Outcome::Network(_)));
+    // What it was: the check fired.
+    let (v, _) = verdict_of(
+        &case_expecting("koennen kein drittes Oktett sein"),
+        build,
+        None,
+    );
+    assert_eq!(v, Verdict::Ok);
+}
+
+/// The same output with a pattern that is NOT in it stays without a ruling —
+/// the rule is "the expected message is there", not "lotse is ignored".
+#[test]
+fn case_174_output_without_the_expected_message_stays_network() {
+    let out = antwort("assertion-zitiert-dns-fehler.txt");
+    let (v, _) = verdict_of(
+        &case_expecting("ohne Snapshot-Abdeckung"),
+        classify(201, &out),
+        None,
+    );
+    assert_eq!(v, Verdict::Network);
+}
+
+/// And tamper's OWN pattern no longer makes the same mistake: had this
+/// output reached us with nix's raw exit code 1, "Could not resolve host"
+/// without the colon would have called it the network too.
+#[test]
+fn case_174_raw_exit_1_is_red_not_network() {
+    let out = antwort("assertion-zitiert-dns-fehler.txt");
+    assert!(matches!(classify(1, &out), Outcome::Red(_)));
+}
+
+/// CASE 199: a file that does not parse, and a check that fired anyway —
+/// because it reads the file with `grep` and never evaluates it. Judged
+/// before the build this was `broken-nix`; the check works.
+#[test]
+fn a_check_that_fires_despite_a_syntax_error_is_ok() {
+    let parse = from_stderr(
+        Path::new("hosts/server/gaeste/photo-01.nix"),
+        &antwort("parse-syntaxfehler.txt"),
+    );
+    assert!(parse.is_some());
+    let out = antwort("assertion-scope-mit-backtick.txt");
+    let (v, _) = verdict_of(
+        &case_expecting("gibt den .email.-Scope nicht frei"),
+        classify(1, &out),
+        parse,
+    );
+    assert_eq!(v, Verdict::Ok);
+}
+
+/// THE PALETTE CASE stays what it was: the file does not parse and the build
+/// failed with something else — the parser, not the assertion.
+#[test]
+fn a_syntax_error_with_another_message_is_broken_nix() {
+    let parse = from_stderr(
+        Path::new("hosts/server/gaeste/photo-01.nix"),
+        &antwort("parse-syntaxfehler.txt"),
+    );
+    let out = antwort("assertion-scope-mit-backtick.txt");
+    let (v, detail) = verdict_of(
+        &case_expecting("onnxruntime ohne OpenVINO"),
+        classify(1, &out),
+        parse,
+    );
+    assert_eq!(v, Verdict::BrokenNix);
+    assert!(detail.contains("does not parse"), "{detail}");
+}
+
+/// Without a syntax error, a different message is still `other-message`.
+#[test]
+fn another_message_without_a_syntax_error_is_other_message() {
+    let out = antwort("assertion-scope-mit-backtick.txt");
+    let (v, _) = verdict_of(
+        &case_expecting("etwas ganz anderes"),
+        classify(1, &out),
+        None,
+    );
+    assert_eq!(v, Verdict::OtherMessage);
 }

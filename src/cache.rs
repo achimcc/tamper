@@ -54,12 +54,7 @@ pub struct CachedOk {
 }
 
 impl Cache {
-    pub fn open(
-        dir: &Path,
-        repo: &Path,
-        commit: &str,
-        nix_version: &str,
-    ) -> Result<Cache, String> {
+    pub fn open(dir: &Path, repo: &Path, commit: &str, nix_version: &str) -> Result<Cache, String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create cache dir {}: {e}", dir.display()))?;
         Ok(Cache {
@@ -137,9 +132,7 @@ impl Cache {
                         .cloned(),
                 );
                 if out.len() == before {
-                    return Err(format!(
-                        "{pattern}: no file below it in the tested commit"
-                    ));
+                    return Err(format!("{pattern}: no file below it in the tested commit"));
                 }
             } else if self.files.contains_key(pattern) {
                 out.push(pattern.clone());

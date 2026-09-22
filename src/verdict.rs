@@ -2,8 +2,8 @@
 //!
 //! The point of this enum is a distinction the shell driver could not make:
 //! two of the eight say nothing at all about the tree (the network was gone,
-//! or the build never started), and two more can be decided without building
-//! anything. Collapsing them into "OK/FAIL" is what made a dead lever look
+//! or the build never started), and one more (`dead-lever`) is decided
+//! without building anything. Collapsing them into "OK/FAIL" is what made a dead lever look
 //! like a check that cannot go red.
 //!
 //! `FalseAlarm` came last and from the corpus: a handful of cases state that
@@ -24,8 +24,10 @@ pub enum Verdict {
     FalseAlarm,
     /// The build failed, but with a different message.
     OtherMessage,
-    /// The sabotaged file no longer parses, so the parser failed, not the
-    /// assertion. No build needed.
+    /// The sabotaged file no longer parses, and the build failed with a
+    /// message other than the expected one — so the parser failed, not the
+    /// assertion. (If the expected message comes anyway, the check fired and
+    /// the case is `Ok`: a check may read a file as text and never parse it.)
     BrokenNix,
     /// DNS or a download was gone. Not a ruling.
     Network,
@@ -91,8 +93,9 @@ impl Verdict {
             }
             Verdict::OtherMessage => "the build failed, but with a different message",
             Verdict::BrokenNix => {
-                "the sabotaged file no longer parses — this proves that broken Nix \
-                 does not build, not that the assertion fires"
+                "the sabotaged file no longer parses and the build failed with another \
+                 message — this proves that broken Nix does not build, not that the \
+                 assertion fires"
             }
             Verdict::Network => "DNS or a download was gone — no ruling",
             Verdict::QueueTimeout => "the build never started (lotse queue) — no ruling",
