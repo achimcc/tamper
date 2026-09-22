@@ -3,6 +3,19 @@
 use crate::run::Outcome;
 use crate::verdict::Verdict;
 
+/// A target whose unsabotaged tree did not build. Its cases were not run:
+/// while the clean tree is red, every one of them would report "failed with
+/// the expected message" or something equally meaningless.
+#[derive(Debug, Clone)]
+pub struct Blocked {
+    pub target: String,
+    /// Why the baseline has no green: the first errors of the build, or
+    /// "network" / "queue timed out".
+    pub reason: String,
+    /// How many of the selected cases belong to this target.
+    pub cases: usize,
+}
+
 pub struct Summary {
     pub total: usize,
     pub ok: usize,
@@ -10,6 +23,8 @@ pub struct Summary {
     pub without_ruling: Vec<(String, Verdict)>,
     pub from_cache: usize,
     pub oldest_cache_days: Option<u64>,
+    /// Targets whose baseline was red. Their cases are not in `total`.
+    pub blocked: Vec<Blocked>,
 }
 
 impl Summary {
@@ -31,12 +46,23 @@ impl Summary {
             // Derived from the outcomes rather than passed in, so the age in
             // the report and the entries that produced it cannot disagree.
             oldest_cache_days: outcomes.iter().filter_map(|o| o.cache_age_days).max(),
+            blocked: Vec::new(),
         }
     }
 
+    pub fn with_blocked(mut self, blocked: Vec<Blocked>) -> Summary {
+        self.blocked = blocked;
+        self
+    }
+
+    /// A finding first — it is what a human must act on. Then a red
+    /// baseline: some cases were not run at all, and that must never read
+    /// as 0. Then cases without a ruling.
     pub fn exit_code(&self) -> u8 {
         if !self.findings.is_empty() {
             1
+        } else if !self.blocked.is_empty() {
+            3
         } else if !self.without_ruling.is_empty() {
             4
         } else {
@@ -81,6 +107,17 @@ impl Summary {
             ));
             for (id, verdict) in &self.without_ruling {
                 out.push_str(&format!("  {:<14} case {id}\n", verdict.slug()));
+            }
+        }
+
+        for b in &self.blocked {
+            out.push_str(&format!(
+                "\nBASELINE RED for target `{}` — its {} case(s) were NOT run, \
+                 because the clean tree does not build:\n",
+                b.target, b.cases
+            ));
+            for line in b.reason.lines() {
+                out.push_str(&format!("                 {line}\n"));
             }
         }
         out

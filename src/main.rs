@@ -6,7 +6,7 @@ use lexopt::prelude::*;
 use tamper::cache::Cache;
 use tamper::cases::{self, Case};
 use tamper::config::Config;
-use tamper::report::Summary;
+use tamper::report::{Blocked, Summary};
 use tamper::run::{self, Ctx};
 use tamper::tree;
 use tamper::verdict::Verdict;
@@ -34,7 +34,7 @@ EXIT CODES
   0  every case ok
   1  at least one finding
   2  tamper could not run
-  3  the baseline is red — no ruling about any case
+  3  a target's baseline is red — its cases were not run (the others were)
   4  no finding, but cases without a ruling (network, queue)";
 
 fn main() -> ExitCode {
@@ -271,6 +271,7 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         no_cache: o.no_cache || dry,
     };
 
+    let mut blocked: Vec<Blocked> = Vec::new();
     let outcomes = if dry {
         let out = run::dry(&chosen, &ctx);
         let hit = out.iter().filter(|o| o.verdict == Verdict::Ok).count();
@@ -284,18 +285,32 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         let mut targets: Vec<String> = chosen.iter().map(|c| c.target.clone()).collect();
         targets.sort();
         targets.dedup();
-        if let Err(e) = run::baseline(&ctx, &targets) {
-            eprintln!("tamper: {e}");
-            return Ok(ExitCode::from(3));
+        let red = run::baseline(&ctx, &targets)?;
+        blocked = red
+            .into_iter()
+            .map(|(target, reason)| Blocked {
+                cases: chosen.iter().filter(|c| c.target == target).count(),
+                target,
+                reason,
+            })
+            .collect();
+        let runnable: Vec<&Case> = chosen
+            .iter()
+            .filter(|c| !blocked.iter().any(|b| b.target == c.target))
+            .copied()
+            .collect();
+        if runnable.is_empty() {
+            Vec::new()
+        } else {
+            run::all_with_retry(&runnable, &ctx, o.jobs)
         }
-        run::all_with_retry(&chosen, &ctx, o.jobs)
     };
 
     // Das eigene Laufverzeichnis wieder abraeumen: Die Baeume darin sind
     // einzeln entfernt, was bleibt, ist die leere Huelle.
     let _ = std::fs::remove_dir_all(&ctx.scratch);
 
-    let summary = Summary::of(&outcomes);
+    let summary = Summary::of(&outcomes).with_blocked(blocked);
     print!("{}", summary.render());
     Ok(ExitCode::from(summary.exit_code()))
 }

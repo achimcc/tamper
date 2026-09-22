@@ -45,12 +45,21 @@ pub fn shard(cases: &[Case], shard: usize, of: usize) -> Vec<&Case> {
         .collect()
 }
 
-/// Build the unsabotaged tree once per target.
+/// Build the unsabotaged tree once per target, and return the targets
+/// whose baseline has no green — each with the reason.
 ///
 /// Without this, a check that is ALREADY red on a clean tree makes every
 /// single case report "fell, with the expected message" — 525 ticks for
 /// nothing. `no-latest-tags` was in exactly that state for months.
-pub fn baseline(ctx: &Ctx, targets: &[String]) -> Result<(), String> {
+///
+/// A red baseline blocks ITS target, not the run. Until 0.3.0 the first red
+/// one stopped everything: in the homeserver acceptance (2026-09-20) OpenWrt
+/// rebuilt its package feeds, the router baseline went red on a hash
+/// mismatch, and 540 cases on ten healthy targets went unjudged with it.
+/// Every target is still built once; an unknown target is a configuration
+/// error and stays one.
+pub fn baseline(ctx: &Ctx, targets: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut red = Vec::new();
     for name in targets {
         let target = ctx
             .cfg
@@ -61,23 +70,16 @@ pub fn baseline(ctx: &Ctx, targets: &[String]) -> Result<(), String> {
         let tree = make_tree(ctx, &at)?;
         let outcome = build::run(&tree.path, &target.attr, &ctx.cfg.lotse.build_class);
         tree.remove()?;
-        match outcome {
-            Build::Green => {}
-            Build::Red(text) => {
-                return Err(format!(
-                    "baseline for target `{name}` is RED — no case can say anything \
-                     while the clean tree does not build:\n{}",
-                    first_errors(&text)
-                ));
-            }
-            Build::Network(_) => return Err(format!("baseline for `{name}`: network, no ruling")),
-            Build::QueueTimeout => {
-                return Err(format!("baseline for `{name}`: queue timed out, no ruling"));
-            }
-            Build::Failed(e) => return Err(format!("baseline for `{name}`: {e}")),
-        }
+        let reason = match outcome {
+            Build::Green => continue,
+            Build::Red(text) => first_errors(&text),
+            Build::Network(_) => "network, no ruling".to_string(),
+            Build::QueueTimeout => "queue timed out, no ruling".to_string(),
+            Build::Failed(e) => e,
+        };
+        red.push((name.clone(), reason));
     }
-    Ok(())
+    Ok(red)
 }
 
 /// Create a throwaway tree, cleaning up a leftover of the same name first.

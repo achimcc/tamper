@@ -100,13 +100,17 @@ because the cache key is computed before it runs.
 | 0 | every case ok |
 | 1 | at least one finding |
 | 2 | tamper could not run |
-| 3 | the baseline is red — no ruling about any case |
+| 3 | a target's baseline is red — its cases were not run, the others were |
 | 4 | no finding, but cases without a ruling |
 
 Exit 3 is the one worth explaining. Before the first case, `tamper` builds
 each target **unsabotaged**. If the clean tree does not build, every case
 would dutifully report "failed with the expected message" — a full set of
-ticks for nothing. So a red baseline produces no verdicts at all.
+ticks for nothing. So a red baseline produces no verdicts for its target: the
+report names the target, why its clean tree is red, and how many cases were
+not run. The other targets run as usual — one upstream hash mismatch should
+not leave five hundred cases on healthy targets unjudged. A finding still
+outranks exit 3; exit 3 outranks cases without a ruling.
 
 ## The cache
 
