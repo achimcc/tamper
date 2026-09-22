@@ -254,12 +254,19 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         Some(c) => c.clone(),
         None => head(&repo)?,
     };
+    // The key reads the SAME commit that gets built — never the working tree.
+    // The Nix version is measured once for the whole run, not once per case.
+    let cache = Cache::open(
+        &cache_dir(&repo)?,
+        &repo,
+        &commit,
+        &tamper::cache::nix_version()?,
+    )?;
     let ctx = Ctx {
         repo: repo.clone(),
         commit,
         scratch: scratch_dir(&repo)?,
-        // Measured once for the whole run, not once per case.
-        cache: Cache::open(&cache_dir(&repo)?, &repo, &tamper::cache::nix_version()?)?,
+        cache,
         cfg,
         no_cache: o.no_cache || dry,
     };

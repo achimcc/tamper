@@ -16,7 +16,9 @@
 //!   * `--no-cache` is the mode of the weekly CI run, so a stale `ok` lives
 //!     at most seven days.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -25,7 +27,20 @@ use crate::cases::{Case, Lever};
 
 pub struct Cache {
     dir: PathBuf,
-    repo: PathBuf,
+    /// Every file of the tested commit, path -> blob id.
+    ///
+    /// THE KEY IS READ FROM THE COMMIT, NOT FROM THE WORKING TREE. What gets
+    /// built is `--commit` (default HEAD), checked out into a throwaway tree;
+    /// the working tree takes no part in it. Up to 0.2.1 the key read the
+    /// working tree, which is the same thing only while both carry the same
+    /// files. During the homeserver acceptance (2026-09-20) the run was pinned
+    /// to one commit for days while the branch could move on: a merge would
+    /// have stored an `ok` under a key describing a `checks.nix` that was
+    /// never built.
+    ///
+    /// Git's blob ids are content hashes, so hashing the id is hashing the
+    /// content — and one `git ls-tree` answers every case of the run.
+    files: BTreeMap<String, String>,
     /// A different Nix evaluates differently, so its version belongs in
     /// every key. It is MEASURED ONCE by the caller and handed in — asking
     /// per case would start 525 processes to get the same answer 525 times,
@@ -39,33 +54,24 @@ pub struct CachedOk {
 }
 
 impl Cache {
-    pub fn open(dir: &Path, repo: &Path, nix_version: &str) -> Result<Cache, String> {
+    pub fn open(
+        dir: &Path,
+        repo: &Path,
+        commit: &str,
+        nix_version: &str,
+    ) -> Result<Cache, String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("cannot create cache dir {}: {e}", dir.display()))?;
         Ok(Cache {
             dir: dir.to_path_buf(),
-            repo: repo.to_path_buf(),
+            files: list_commit(repo, commit)?,
             nix_version: nix_version.to_string(),
         })
     }
 
-    /// OPEN: the key reads its files from the WORKING TREE (`self.repo`),
-    /// while the case is tested against `--commit`. As long as the two carry
-    /// the same files that is the same thing — and on a normal run, where
-    /// `--commit` defaults to HEAD and the tree is clean, it always is.
-    ///
-    /// It stops being the same thing during a long acceptance, where the run
-    /// is pinned to one commit for days while the branch moves on: merging
-    /// `origin/main` into the worktree changes `checks.nix`, so the key would
-    /// describe a tree that was never built. The entry would still say `ok`.
-    ///
-    /// The fix is to read the key's files from the commit
-    /// (`git show <sha>:<path>`) whenever `--commit` is given. Not done here
-    /// because it would change the tool in the middle of the run that found
-    /// it; found 2026-09-20 while deciding whether to merge mid-acceptance.
     pub fn key(&self, case: &Case, definitions: &[String]) -> Result<String, String> {
         let mut h = Sha256::new();
-        h.update(b"tamper-v1\0");
+        h.update(b"tamper-v2\0");
         h.update(env!("CARGO_PKG_VERSION").as_bytes());
         h.update(b"\0");
         h.update(case.id.as_bytes());
@@ -82,38 +88,68 @@ impl Cache {
         }
 
         // The sabotaged files, then the check definitions. Both sorted, so
-        // the key does not depend on the order the filesystem hands them out.
-        let mut files: Vec<PathBuf> = case
+        // the key does not depend on the order they are handed out.
+        let mut files: Vec<String> = case
             .levers
             .iter()
             .flat_map(Lever::files)
-            .map(PathBuf::from)
+            .map(|f| f.to_string())
             .collect();
         files.sort();
         files.dedup();
         for file in files {
-            h.update(file.to_string_lossy().as_bytes());
+            h.update(file.as_bytes());
             h.update(b"\0");
             // A case may sabotage a file by creating it, so "not there" is a
             // legitimate state and part of the key.
-            match std::fs::read(self.repo.join(&file)) {
-                Ok(bytes) => h.update(&bytes),
-                Err(_) => h.update(b"<absent>"),
+            match self.files.get(&file) {
+                Some(blob) => h.update(blob.as_bytes()),
+                None => h.update(b"<absent>"),
             }
             h.update(b"\0");
         }
 
-        for file in expand(&self.repo, definitions)? {
-            h.update(file.to_string_lossy().as_bytes());
+        for file in self.expand(definitions)? {
+            h.update(file.as_bytes());
             h.update(b"\0");
-            let bytes =
-                std::fs::read(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
-            h.update(&bytes);
+            h.update(self.files[&file].as_bytes());
             h.update(b"\0");
         }
 
         h.update(self.nix_version.as_bytes());
         Ok(format!("{:x}", h.finalize()))
+    }
+
+    /// Turn the declared patterns into a sorted list of files OF THE COMMIT.
+    /// A pattern may be a plain path or end in `/**`. A pattern that matches
+    /// nothing is an error: a key that quietly drops a file goes stale
+    /// without saying so.
+    pub fn expand(&self, patterns: &[String]) -> Result<Vec<String>, String> {
+        let mut out = Vec::new();
+        for pattern in patterns {
+            if let Some(prefix) = pattern.strip_suffix("/**") {
+                let prefix = format!("{}/", prefix.trim_end_matches('/'));
+                let before = out.len();
+                out.extend(
+                    self.files
+                        .keys()
+                        .filter(|f| f.starts_with(&prefix))
+                        .cloned(),
+                );
+                if out.len() == before {
+                    return Err(format!(
+                        "{pattern}: no file below it in the tested commit"
+                    ));
+                }
+            } else if self.files.contains_key(pattern) {
+                out.push(pattern.clone());
+            } else {
+                return Err(format!("{pattern}: no such file in the tested commit"));
+            }
+        }
+        out.sort();
+        out.dedup();
+        Ok(out)
     }
 
     pub fn get(&self, key: &str) -> Option<CachedOk> {
@@ -138,43 +174,31 @@ impl Cache {
     }
 }
 
-/// Turn the declared patterns into a sorted list of real files. A pattern
-/// may be a plain path or end in `/**`.
-pub fn expand(repo: &Path, patterns: &[String]) -> Result<Vec<PathBuf>, String> {
-    let mut out = Vec::new();
-    for pattern in patterns {
-        if let Some(prefix) = pattern.strip_suffix("/**") {
-            let dir = repo.join(prefix);
-            if !dir.is_dir() {
-                return Err(format!("{pattern}: {} is not a directory", dir.display()));
-            }
-            collect(&dir, &mut out)?;
-        } else {
-            let file = repo.join(pattern);
-            if !file.is_file() {
-                return Err(format!("{pattern}: no such file below {}", repo.display()));
-            }
-            out.push(file);
-        }
+/// Every file of `commit`, path -> blob id, from one `git ls-tree`.
+/// `-z` so that no path with an odd character can split an entry.
+fn list_commit(repo: &Path, commit: &str) -> Result<BTreeMap<String, String>, String> {
+    let out = Command::new("git")
+        .args(["ls-tree", "-r", "-z", "--full-tree", commit])
+        .current_dir(repo)
+        .output()
+        .map_err(|e| format!("cannot run git ls-tree: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "cannot list commit {commit}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
-    out.sort();
-    out.dedup();
-    Ok(out)
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in
-        std::fs::read_dir(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?
-    {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect(&path, out)?;
-        } else {
-            out.push(path);
-        }
+    let mut files = BTreeMap::new();
+    for entry in out.stdout.split(|b| *b == 0).filter(|e| !e.is_empty()) {
+        let entry = String::from_utf8_lossy(entry);
+        // "<mode> <type> <object>\t<path>"
+        let Some((meta, path)) = entry.split_once('\t') else {
+            return Err(format!("git ls-tree: unexpected entry {entry:?}"));
+        };
+        let object = meta.split(' ').nth(2).unwrap_or_default();
+        files.insert(path.to_string(), object.to_string());
     }
-    Ok(())
+    Ok(files)
 }
 
 /// Ask Nix which version it is — once per run, at startup.

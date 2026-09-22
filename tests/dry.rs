@@ -25,7 +25,7 @@ build_class = "eval"
 "#,
     )
     .unwrap();
-    let cache = Cache::open(&scratch.join("cache"), &repo, "nix (Nix) 2.34.0").unwrap();
+    let cache = Cache::open(&scratch.join("cache"), &repo, "HEAD", "nix (Nix) 2.34.0").unwrap();
     let ctx = Ctx {
         repo,
         commit: "HEAD".into(),
