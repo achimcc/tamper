@@ -8,5 +8,6 @@ pub mod message;
 pub mod parse;
 pub mod report;
 pub mod run;
+pub mod stop;
 pub mod tree;
 pub mod verdict;

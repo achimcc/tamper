@@ -277,3 +277,61 @@ levers = [ { file = "f.nix", sed = "s|a|b|" } ]
         "{problems:?}"
     );
 }
+
+#[test]
+fn a_lever_path_outside_the_tree_is_an_error() {
+    // Absolute paths and `..` are refused when the cases are loaded, so
+    // `tamper list` says so before any tree exists (audit 3, CD-8).
+    for (file, lever) in [
+        ("/etc/passwd", r#"{ file = "/etc/passwd", sed = "s|a|b|" }"#),
+        (
+            "../draussen.nix",
+            r#"{ file = "../draussen.nix", perl = "s/a/b/" }"#,
+        ),
+        (
+            "lib/../../x.nix",
+            r#"{ file = "lib/../../x.nix", sed = "s|a|b|" }"#,
+        ),
+        (
+            "../neu.nix",
+            r#"{ script = "true", files = ["ok.nix", "../neu.nix"] }"#,
+        ),
+    ] {
+        let dir = tempdir();
+        write(
+            &dir,
+            "a.toml",
+            &format!(
+                r#"
+[[case]]
+id = "1"
+name = "x"
+target = "server"
+expect = "x"
+why = "x"
+levers = [ {lever} ]
+"#
+            ),
+        );
+        let cases = cases::load_dir(&dir).unwrap();
+        let problems = cases::validate(&cases, &config());
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains(file) && p.contains("outside")),
+            "{file}: {problems:?}"
+        );
+    }
+}
+
+#[test]
+fn a_plain_relative_lever_path_is_fine() {
+    let dir = tempdir();
+    write(
+        &dir,
+        "a.toml",
+        &one_case("1").replace("f.nix", "./lib/gaeste.nix"),
+    );
+    let cases = cases::load_dir(&dir).unwrap();
+    assert!(cases::validate(&cases, &config()).is_empty());
+}

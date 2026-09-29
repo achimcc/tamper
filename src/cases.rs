@@ -1,6 +1,6 @@
 //! The cases: file, change, expected message — and why.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde::Deserialize;
 
@@ -141,6 +141,29 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Case>, String> {
     Ok(out)
 }
 
+/// A lever may only name a path INSIDE the tree: relative, and without `..`.
+/// Checked when the cases are loaded, so `tamper list` says so before any
+/// tree exists; `lever::apply` checks again on the resolved path, which is
+/// the only place a symlink shows (audit 3, CD-8).
+pub fn check_lever_path(file: &str) -> Result<(), String> {
+    if file.is_empty() {
+        return Err("a lever names an empty path".into());
+    }
+    let escapes = Path::new(file).components().any(|c| {
+        matches!(
+            c,
+            Component::RootDir | Component::Prefix(_) | Component::ParentDir
+        )
+    });
+    if escapes {
+        return Err(format!(
+            "lever path {file} leads outside the throwaway tree — only relative \
+             paths without `..` are allowed"
+        ));
+    }
+    Ok(())
+}
+
 /// Everything that can be decided without touching the repository. Returns
 /// one line per problem; empty means the set is sound.
 pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
@@ -169,6 +192,11 @@ pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
                 "{at}: neither `expect` nor `green` — the case does not say what it expects"
             )),
             _ => {}
+        }
+        for file in case.levers.iter().flat_map(Lever::files) {
+            if let Err(e) = check_lever_path(&file) {
+                problems.push(format!("{at}: {e}"));
+            }
         }
         if case.why.trim().is_empty() {
             problems.push(format!("{at}: empty `why` — a case without a reason rots"));

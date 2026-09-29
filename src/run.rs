@@ -84,6 +84,10 @@ pub fn baseline(ctx: &Ctx, targets: &[String]) -> Result<Vec<(String, String)>, 
 
 /// Create a throwaway tree, cleaning up a leftover of the same name first.
 fn make_tree(ctx: &Ctx, at: &std::path::Path) -> Result<Tree, String> {
+    // After a signal, no new tree: the cleanup is removing the old ones.
+    if crate::stop::requested() {
+        return Err("interrupted".into());
+    }
     std::fs::create_dir_all(&ctx.scratch)
         .map_err(|e| format!("cannot create {}: {e}", ctx.scratch.display()))?;
     match Tree::create(&ctx.repo, &ctx.commit, at) {
@@ -118,7 +122,10 @@ pub fn one(case: &Case, ctx: &Ctx, slot: usize) -> Outcome {
     let key = if ctx.no_cache {
         None
     } else {
-        match ctx.cache.key(case, &ctx.cfg.cache.definitions) {
+        match ctx
+            .cache
+            .key(case, &target.attr, &ctx.cfg.cache.definitions)
+        {
             Ok(k) => Some(k),
             Err(e) => return out(Verdict::NotRed, format!("cache key: {e}")),
         }
@@ -241,6 +248,9 @@ pub fn verdict_of(case: &Case, build: Build, broken: Option<String>) -> (Verdict
 pub fn dry(cases: &[&Case], ctx: &Ctx) -> Vec<Outcome> {
     let mut out = Vec::new();
     for (i, case) in cases.iter().enumerate() {
+        if crate::stop::requested() {
+            break;
+        }
         let at = ctx.scratch.join(format!("dry-{}", i % 8));
         let tree = match make_tree(ctx, &at) {
             Ok(t) => t,
@@ -328,6 +338,9 @@ pub fn all(cases: &[&Case], ctx: &Ctx, jobs: usize) -> Vec<Outcome> {
             let results = &results;
             scope.spawn(move || {
                 loop {
+                    if crate::stop::requested() {
+                        break;
+                    }
                     let i = next.fetch_add(1, Ordering::SeqCst);
                     let Some(case) = cases.get(i) else { break };
                     let outcome = one(case, ctx, slot);

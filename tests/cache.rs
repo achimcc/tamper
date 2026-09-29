@@ -5,6 +5,7 @@ use tamper::cache::Cache;
 use tamper::cases::{Case, Compare, Lever};
 
 const NIX: &str = "nix (Nix) 2.34.0";
+const ATTR: &str = ".#nixosConfigurations.server.config.system.build.toplevel";
 
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -76,27 +77,33 @@ fn defs() -> Vec<String> {
 #[test]
 fn the_same_commit_gives_the_same_key() {
     let (dir, sha) = sandbox();
-    let a = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
-    let b = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
+    let a = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
+    let b = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
     assert_eq!(a, b);
 }
 
 #[test]
 fn changing_the_sabotaged_file_changes_the_key() {
     let (dir, sha) = sandbox();
-    let before = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
+    let before = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
     std::fs::write(dir.join("repo/lib/gaeste.nix"), "{ uidBasis = 300000; }\n").unwrap();
     let after = commit(&dir.join("repo"));
-    assert_ne!(before, open(&dir, &after).key(&a_case(), &defs()).unwrap());
+    assert_ne!(
+        before,
+        open(&dir, &after).key(&a_case(), ATTR, &defs()).unwrap()
+    );
 }
 
 #[test]
 fn changing_the_check_definitions_changes_the_key() {
     let (dir, sha) = sandbox();
-    let before = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
+    let before = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
     std::fs::write(dir.join("repo/checks.nix"), "more assertions\n").unwrap();
     let after = commit(&dir.join("repo"));
-    assert_ne!(before, open(&dir, &after).key(&a_case(), &defs()).unwrap());
+    assert_ne!(
+        before,
+        open(&dir, &after).key(&a_case(), ATTR, &defs()).unwrap()
+    );
 }
 
 #[test]
@@ -107,20 +114,23 @@ fn the_working_tree_does_not_change_the_key_of_a_commit() {
     // stored an `ok` under a key describing a `checks.nix` that was never
     // built. What is built is the commit, so the commit is what the key reads.
     let (dir, sha) = sandbox();
-    let before = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
+    let before = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
     std::fs::write(dir.join("repo/checks.nix"), "uncommitted assertions\n").unwrap();
     std::fs::write(dir.join("repo/lib/gaeste.nix"), "{ uncommitted = 1; }\n").unwrap();
-    assert_eq!(before, open(&dir, &sha).key(&a_case(), &defs()).unwrap());
+    assert_eq!(
+        before,
+        open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap()
+    );
 }
 
 #[test]
 fn changing_the_expected_pattern_changes_the_key() {
     let (dir, sha) = sandbox();
     let c = open(&dir, &sha);
-    let before = c.key(&a_case(), &defs()).unwrap();
+    let before = c.key(&a_case(), ATTR, &defs()).unwrap();
     let mut other = a_case();
     other.expect = "etwas ganz anderes".into();
-    assert_ne!(before, c.key(&other, &defs()).unwrap());
+    assert_ne!(before, c.key(&other, ATTR, &defs()).unwrap());
 }
 
 #[test]
@@ -133,10 +143,13 @@ fn a_file_the_case_creates_is_absent_and_that_is_part_of_the_key() {
         file: "gibt-es-noch-nicht.nix".into(),
         sed: "s|a|b|".into(),
     }];
-    let absent = c.key(&creates, &defs()).unwrap();
+    let absent = c.key(&creates, ATTR, &defs()).unwrap();
     std::fs::write(dir.join("repo/gibt-es-noch-nicht.nix"), "{ }\n").unwrap();
     let after = commit(&dir.join("repo"));
-    assert_ne!(absent, open(&dir, &after).key(&creates, &defs()).unwrap());
+    assert_ne!(
+        absent,
+        open(&dir, &after).key(&creates, ATTR, &defs()).unwrap()
+    );
 }
 
 #[test]
@@ -144,10 +157,13 @@ fn prose_outside_the_declared_set_does_not_change_the_key() {
     // THE NAMED ASSUMPTION. This test exists so that anybody widening it
     // has to come here and say so out loud.
     let (dir, sha) = sandbox();
-    let before = open(&dir, &sha).key(&a_case(), &defs()).unwrap();
+    let before = open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap();
     std::fs::write(dir.join("repo/README.md"), "different prose\n").unwrap();
     let after = commit(&dir.join("repo"));
-    assert_eq!(before, open(&dir, &after).key(&a_case(), &defs()).unwrap());
+    assert_eq!(
+        before,
+        open(&dir, &after).key(&a_case(), ATTR, &defs()).unwrap()
+    );
 }
 
 #[test]
@@ -198,9 +214,29 @@ fn an_unknown_commit_is_an_error() {
 fn only_ok_is_stored_and_it_comes_back_with_an_age() {
     let (dir, sha) = sandbox();
     let c = open(&dir, &sha);
-    let key = c.key(&a_case(), &defs()).unwrap();
+    let key = c.key(&a_case(), ATTR, &defs()).unwrap();
     assert!(c.get(&key).is_none());
     c.put_ok(&key).unwrap();
     let hit = c.get(&key).expect("an ok must come back");
     assert_eq!(hit.age_days, 0);
+}
+
+#[test]
+fn a_different_target_attribute_changes_the_key() {
+    // Audit 3, CD-9: the key held the target's NAME. Point `server` at a
+    // narrower attribute in tamper.toml and every old `ok` of that target
+    // stayed valid — for a build that no longer runs the check.
+    let (dir, sha) = sandbox();
+    let c = open(&dir, &sha);
+    let wide = c
+        .key(
+            &a_case(),
+            ".#nixosConfigurations.server.config.system.build.toplevel",
+            &defs(),
+        )
+        .unwrap();
+    let narrow = c
+        .key(&a_case(), ".#checks.x86_64-linux.etwas-schmaleres", &defs())
+        .unwrap();
+    assert_ne!(wide, narrow);
 }

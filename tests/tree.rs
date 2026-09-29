@@ -102,3 +102,61 @@ fn removing_a_tree_leaves_the_repository_without_it() {
     assert!(!path.exists());
     tree::prune(&repo).unwrap();
 }
+
+// --- nothing is left behind by a run that died (audit 3, CD-8) -------------
+
+fn listed(repo: &std::path::Path) -> String {
+    let out = Command::new("git")
+        .args(["worktree", "list"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The pid of a process that has certainly exited.
+fn dead_pid() -> u32 {
+    let mut child = Command::new("true").spawn().unwrap();
+    let pid = child.id();
+    child.wait().unwrap();
+    pid
+}
+
+#[test]
+fn the_trees_of_a_dead_run_are_removed_and_deregistered() {
+    // A run killed mid-case leaves `run-<pid>/slot-0` on disk AND in
+    // `git worktree list`. `git worktree prune` alone keeps both, because
+    // the directory still exists — the audit found exactly that entry.
+    let repo = fixture();
+    let base = repo.with_extension("scratch");
+    let dead = base.join(format!("run-{}", dead_pid()));
+    let alive = base.join(format!("run-{}", std::process::id()));
+    let left = Tree::create(&repo, "HEAD", &dead.join("slot-0")).unwrap();
+    let mine = Tree::create(&repo, "HEAD", &alive.join("slot-0")).unwrap();
+    assert_eq!(listed(&repo).lines().count(), 3);
+
+    let removed = tree::sweep_dead_runs(&repo, &base).unwrap();
+
+    assert_eq!(removed, 1);
+    assert!(!left.path.exists(), "the dead run's tree is still on disk");
+    assert!(!dead.exists(), "the dead run's directory is still there");
+    assert!(
+        mine.path.exists(),
+        "a LIVE run's tree must never be touched"
+    );
+    let now = listed(&repo);
+    assert_eq!(now.lines().count(), 2, "{now}");
+    assert!(!now.contains(&dead.to_string_lossy().into_owned()), "{now}");
+    mine.remove().unwrap();
+}
+
+#[test]
+fn removing_everything_under_a_run_directory_deregisters_it() {
+    let repo = fixture();
+    let run = repo.with_extension("scratch-alle").join("run-1");
+    let _a = Tree::create(&repo, "HEAD", &run.join("slot-0")).unwrap();
+    let _b = Tree::create(&repo, "HEAD", &run.join("slot-1")).unwrap();
+    tree::remove_all_under(&repo, &run).unwrap();
+    assert!(!run.exists());
+    assert_eq!(listed(&repo).lines().count(), 1, "{}", listed(&repo));
+}

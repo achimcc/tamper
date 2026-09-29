@@ -238,8 +238,15 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         .map_err(|e| format!("cannot resolve {}: {e}", root.display()))?;
 
     // Clear what a run that died left behind, before anything else asks git
-    // for a worktree.
+    // for a worktree: first git's records of vanished trees, then the trees
+    // of runs whose process is gone — their directories still exist, so
+    // `prune` alone keeps them (audit 3, CD-8).
     tree::prune(&repo)?;
+    let base = scratch_base(&repo);
+    // A leftover that will not go is worth a line, not the whole run.
+    if let Err(e) = tree::sweep_dead_runs(&repo, &base) {
+        eprintln!("tamper: could not clear what a dead run left behind: {e}");
+    }
 
     let chosen: Vec<&Case> = run::shard(&cases, o.shard, o.of.max(1))
         .into_iter()
@@ -262,10 +269,20 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         &commit,
         &tamper::cache::nix_version()?,
     )?;
+    let scratch = scratch_dir(&base)?;
+    // From here on a tree may exist, so an interruption must remove it.
+    {
+        let (repo, scratch) = (repo.clone(), scratch.clone());
+        tamper::stop::install(move || {
+            if let Err(e) = tree::remove_all_under(&repo, &scratch) {
+                eprintln!("tamper: interrupted, and the cleanup failed: {e}");
+            }
+        });
+    }
     let ctx = Ctx {
         repo: repo.clone(),
         commit,
-        scratch: scratch_dir(&repo)?,
+        scratch,
         cache,
         cfg,
         no_cache: o.no_cache || dry,
@@ -339,16 +356,19 @@ fn head(repo: &Path) -> Result<String, String> {
 /// other's trees. The result was a FALSE `dead-lever` — a finding pointing
 /// at the case, for something the case had nothing to do with. On a
 /// workstation with a dozen sessions that is not an edge case.
-fn scratch_dir(repo: &Path) -> Result<PathBuf, String> {
-    let base = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = base
-        .join("tamper")
-        .join(slug(repo))
-        .join(format!("run-{}", std::process::id()));
+fn scratch_dir(base: &Path) -> Result<PathBuf, String> {
+    let dir = base.join(format!("run-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     Ok(dir)
+}
+
+/// Where every run of this repository keeps its `run-<pid>` directory.
+fn scratch_base(repo: &Path) -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("tamper")
+        .join(slug(repo))
 }
 
 fn cache_dir(repo: &Path) -> Result<PathBuf, String> {

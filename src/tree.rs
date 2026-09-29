@@ -114,6 +114,101 @@ impl Tree {
     }
 }
 
+/// Remove every worktree registered below `dir`, then `dir` itself, then
+/// git's record of anything that is gone. This is what an interrupted run
+/// calls on its own scratch directory, and what startup calls on the
+/// directory of a run that died.
+///
+/// `git worktree prune` alone is not enough: it forgets a tree only once its
+/// directory is gone, and a killed run leaves the directory behind. The
+/// audit (3, CD-8) found `run-<pid>/dry-0` still listed after a SIGINT.
+pub fn remove_all_under(repo: &Path, dir: &Path) -> Result<(), String> {
+    let resolved = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let out = git(repo, &["worktree", "list", "--porcelain", "-z"])?;
+    if !out.status.success() {
+        return Err(format!(
+            "cannot list worktrees: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let mut problems = Vec::new();
+    for field in String::from_utf8_lossy(&out.stdout).split('\0') {
+        let Some(path) = field.strip_prefix("worktree ") else {
+            continue;
+        };
+        let path = PathBuf::from(path);
+        if !(path.starts_with(&resolved) || path.starts_with(dir)) {
+            continue;
+        }
+        let gone = git(
+            repo,
+            &["worktree", "remove", "--force", &path.to_string_lossy()],
+        )?;
+        // A tree whose directory has already vanished cannot be removed —
+        // `prune` below forgets it. Anything else is worth saying.
+        if !gone.status.success() && path.exists() {
+            problems.push(format!(
+                "{}: {}",
+                path.display(),
+                String::from_utf8_lossy(&gone.stderr).trim()
+            ));
+        }
+    }
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)
+            .map_err(|e| format!("cannot remove {}: {e}", dir.display()))?;
+    }
+    prune(repo)?;
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "cannot remove worktree(s): {}",
+            problems.join("; ")
+        ))
+    }
+}
+
+/// Remove what runs that DIED left below `base` — the `run-<pid>`
+/// directories whose process no longer exists. A live run (another session
+/// on the same repository) is never touched. Returns how many were removed.
+pub fn sweep_dead_runs(repo: &Path, base: &Path) -> Result<usize, String> {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return Ok(0);
+    };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name
+            .to_str()
+            .and_then(|n| n.strip_prefix("run-"))
+            .and_then(|n| n.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        if pid <= 0 || alive(pid) {
+            continue;
+        }
+        remove_all_under(repo, &entry.path())?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+unsafe extern "C" {
+    fn kill(pid: i32, sig: i32) -> i32;
+}
+
+/// Signal 0 delivers nothing and only asks whether the process exists.
+/// EPERM means it does, just not ours — so only ESRCH counts as dead.
+fn alive(pid: i32) -> bool {
+    // SAFETY: kill with signal 0 has no effect besides the existence check.
+    if unsafe { kill(pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(3 /* ESRCH */)
+}
+
 /// Clean up after a run that died. Called once at startup.
 pub fn prune(repo: &Path) -> Result<(), String> {
     let out = git(repo, &["worktree", "prune"])?;

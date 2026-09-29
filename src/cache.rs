@@ -64,14 +64,20 @@ impl Cache {
         })
     }
 
-    pub fn key(&self, case: &Case, definitions: &[String]) -> Result<String, String> {
+    /// `attr` is the flake attribute the case's target builds. The target's
+    /// NAME is not enough: point `server` at a narrower attribute in
+    /// tamper.toml and the same name builds something else — up to 0.3.1
+    /// every old `ok` of that target stayed valid (audit 3, CD-9).
+    pub fn key(&self, case: &Case, attr: &str, definitions: &[String]) -> Result<String, String> {
         let mut h = Sha256::new();
-        h.update(b"tamper-v2\0");
+        h.update(b"tamper-v3\0");
         h.update(env!("CARGO_PKG_VERSION").as_bytes());
         h.update(b"\0");
         h.update(case.id.as_bytes());
         h.update(b"\0");
         h.update(case.target.as_bytes());
+        h.update(b"\0");
+        h.update(attr.as_bytes());
         h.update(b"\0");
         h.update(case.expect.as_bytes());
         h.update(b"\0");

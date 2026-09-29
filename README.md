@@ -93,6 +93,18 @@ without a shell in between: the expression is one argv element, so it needs no
 escaping of its own. A `script` lever must declare the `files` it touches,
 because the cache key is computed before it runs.
 
+"Without a shell" is about quoting, not trust, so two fences keep a lever in
+its throwaway tree: every `file`/`files` path must be relative and free of
+`..` (checked when the cases load, so `tamper list` refuses it), and a `sed`
+or `perl` lever's file must *resolve* inside the tree — a symlink pointing out
+is refused too. `sed` runs with `--sandbox`, which rejects the `e`, `r` and `w`
+commands. `perl` expressions and `script` levers remain code from the case
+file, trusted like the repository that holds it.
+
+An interrupted run (SIGINT, SIGTERM, SIGHUP) removes its own worktrees before
+it exits with 128 + signal; the trees of a run that was killed outright are
+removed at the next start, once its process is gone.
+
 ## Exit codes
 
 | | |
@@ -115,8 +127,8 @@ outranks exit 3; exit 3 outranks cases without a ruling.
 ## The cache
 
 Re-running every case on every commit is the reason nobody runs them. The
-result cache keys each ruling by the case itself, the files it edits, and the
-files that define the checks — all read from the commit under test
+result cache keys each ruling by the case itself, the flake attribute its
+target builds, the files it edits, and the files that define the checks — all read from the commit under test
 (`--commit`, default `HEAD`), never from the working tree, because the commit
 is what gets built. Everything else in the tree is assumed unable to
 flip a ruling — a **named assumption**, documented with the counter-example
