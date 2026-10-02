@@ -195,12 +195,16 @@ pub fn sweep_dead_runs(repo: &Path, base: &Path) -> Result<usize, String> {
     Ok(removed)
 }
 
+// SAFETY: the signature matches libc's `kill(pid_t, int) -> int`; `pid_t`
+// and `int` are i32 on every target tamper builds for (Linux, macOS).
+#[allow(unsafe_code)]
 unsafe extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
 /// Signal 0 delivers nothing and only asks whether the process exists.
 /// EPERM means it does, just not ours — so only ESRCH counts as dead.
+#[allow(unsafe_code)]
 fn alive(pid: i32) -> bool {
     // SAFETY: kill with signal 0 has no effect besides the existence check.
     if unsafe { kill(pid, 0) } == 0 {

@@ -16,5 +16,13 @@ serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
 
+[lints.rust]
+# `unsafe` is denied crate-wide. The five places that need it — the
+# declarations of and the calls to libc's signal, _exit and kill — carry an
+# `#[allow(unsafe_code)]` and a `// SAFETY:` comment each; anything new
+# fails the build.
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
 [profile.release]
 lto = true

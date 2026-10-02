@@ -21,11 +21,17 @@ const SIGTERM: i32 = 15;
 
 static RECEIVED: AtomicI32 = AtomicI32::new(0);
 
+// SAFETY: both signatures match libc's on every target tamper builds for
+// (Linux, macOS): `int` is i32, `sighandler_t` is a pointer to
+// `extern "C" fn(int)`, and the previous handler it returns is
+// pointer-sized and never called here. `_exit` does not return.
+#[allow(unsafe_code)]
 unsafe extern "C" {
     fn signal(signum: i32, handler: extern "C" fn(i32)) -> usize;
     fn _exit(status: i32) -> !;
 }
 
+#[allow(unsafe_code)]
 extern "C" fn on_signal(sig: i32) {
     if RECEIVED.swap(sig, Ordering::SeqCst) != 0 {
         // SAFETY: _exit is async-signal-safe; this is the second signal.
@@ -41,6 +47,7 @@ pub fn requested() -> bool {
 
 /// Catch SIGINT, SIGTERM and SIGHUP; on the first one run `cleanup` and
 /// exit with 128 + signal.
+#[allow(unsafe_code)]
 pub fn install(cleanup: impl FnOnce() + Send + 'static) {
     for sig in [SIGHUP, SIGINT, SIGTERM] {
         // SAFETY: the handler only touches an atomic (or calls _exit).
