@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "tamper"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "lexopt",
  "regex",
