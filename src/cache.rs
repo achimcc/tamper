@@ -13,8 +13,11 @@
 //!   * only `ok` is stored — anything else always runs again;
 //!   * the run reports cache COVERAGE and the age of its oldest entry,
 //!     never just the number of hits;
-//!   * `--no-cache` is the mode of the weekly CI run, so a stale `ok` lives
-//!     at most seven days.
+//!   * `--no-cache` is the mode of the periodic CI run. How long a stale
+//!     `ok` can live is then a question for the LEDGER (`ledger.rs`,
+//!     `--max-age`), which measures it — up to 0.4.1 this line said "at most
+//!     seven days", and on the one inventory it was written for that run
+//!     never finished.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

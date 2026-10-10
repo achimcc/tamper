@@ -1,12 +1,16 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use lexopt::prelude::*;
 
 use tamper::cache::Cache;
 use tamper::cases::{self, Case};
 use tamper::config::Config;
-use tamper::report::{Blocked, Summary};
+use tamper::ledger::{self, Ledger};
+use tamper::report::{Blocked, Book, Summary};
 use tamper::run::{self, Ctx};
 use tamper::tree;
 use tamper::verdict::Verdict;
@@ -25,17 +29,31 @@ OPTIONS
   --target NAME     only cases for this target (repeatable)
   --case ID         only this case (repeatable)
   -j, --jobs N      workers offered; lotse decides when a build starts (default 4)
-  --no-cache        ignore the result cache — the mode of the weekly CI run
+  --no-cache        ignore the result cache — the mode of the periodic CI run
   --shard I --of N  run only every Nth case, starting at I
   --commit REF      the commit to test (default: HEAD)
   --version, --help
+
+THE LEDGER — for a run that cannot get through every case in one go
+  --oldest-first    rule what was never ruled first, then standing findings,
+                    then `ok` from the oldest ruling to the youngest
+  --budget TIME     start no new case after TIME (170m, 3h, 90s); the one
+                    under way is finished, the rest keeps its place in line
+  --max-age DAYS    exit 5 if the oldest entry is older than DAYS
+  --metrics FILE    write the ledger's state as a Prometheus text file
+  --ledger DIR      where the ledger lives
+                    (default: $XDG_STATE_HOME/tamper/<repository>)
+  Any of these but --budget makes the run keep a ledger: every ruling is
+  written the moment it is made, and a finding stands until the case is
+  ruled again.
 
 EXIT CODES
   0  every case ok
   1  at least one finding
   2  tamper could not run
   3  a target's baseline is red — its cases were not run (the others were)
-  4  no finding, but cases without a ruling (network, queue)";
+  4  no finding, but cases without a ruling (network, queue)
+  5  no finding, but the ledger's oldest entry is older than --max-age";
 
 fn main() -> ExitCode {
     match run() {
@@ -58,6 +76,22 @@ struct Opts {
     of: usize,
     commit: Option<String>,
     rest: Vec<String>,
+    oldest_first: bool,
+    budget: Option<Duration>,
+    max_age_days: Option<u64>,
+    metrics: Option<PathBuf>,
+    ledger: Option<PathBuf>,
+}
+
+impl Opts {
+    /// `--budget` alone only cuts a run short; everything else needs the
+    /// ledger to mean anything.
+    fn keeps_ledger(&self) -> bool {
+        self.oldest_first
+            || self.max_age_days.is_some()
+            || self.metrics.is_some()
+            || self.ledger.is_some()
+    }
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -91,6 +125,16 @@ fn run() -> Result<ExitCode, String> {
             Long("commit") => {
                 o.commit = Some(parser.value().map_err(str_err)?.string().map_err(str_err)?)
             }
+            Long("oldest-first") => o.oldest_first = true,
+            Long("budget") => {
+                let text = parser.value().map_err(str_err)?.string().map_err(str_err)?;
+                o.budget = Some(ledger::parse_duration(&text)?);
+            }
+            Long("max-age") => {
+                o.max_age_days = Some(parser.value().map_err(str_err)?.parse().map_err(str_err)?)
+            }
+            Long("metrics") => o.metrics = Some(PathBuf::from(parser.value().map_err(str_err)?)),
+            Long("ledger") => o.ledger = Some(PathBuf::from(parser.value().map_err(str_err)?)),
             Long("help") | Short('h') => {
                 println!("{USAGE}");
                 return Ok(ExitCode::SUCCESS);
@@ -248,7 +292,7 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         eprintln!("tamper: could not clear what a dead run left behind: {e}");
     }
 
-    let chosen: Vec<&Case> = run::shard(&cases, o.shard, o.of.max(1))
+    let mut chosen: Vec<&Case> = run::shard(&cases, o.shard, o.of.max(1))
         .into_iter()
         .filter(|c| o.targets.is_empty() || o.targets.contains(&c.target))
         .filter(|c| o.ids.is_empty() || o.ids.contains(&c.id))
@@ -256,6 +300,25 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
     if chosen.is_empty() {
         return Err("no case matches the selection".into());
     }
+
+    // The ledger, before the first case: forget the cases that are gone,
+    // give the new ones their first entry, and only then decide the order —
+    // so a case written today is in tonight's front row.
+    let book = if !dry && o.keeps_ledger() {
+        let dir = match &o.ledger {
+            Some(dir) => dir.clone(),
+            None => state_dir(&repo)?,
+        };
+        let book = Ledger::open(&dir)?;
+        book.prune(&cases.iter().map(|c| c.id.clone()).collect())?;
+        book.note_seen(&chosen, now_secs())?;
+        if o.oldest_first {
+            chosen = ledger::oldest_first(&chosen, &book);
+        }
+        Some(book)
+    } else {
+        None
+    };
 
     let commit = match &o.commit {
         Some(c) => c.clone(),
@@ -270,12 +333,24 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         &tamper::cache::nix_version()?,
     )?;
     let scratch = scratch_dir(&base)?;
-    // From here on a tree may exist, so an interruption must remove it.
+    let live: Arc<Mutex<Vec<run::Outcome>>> = Arc::new(Mutex::new(Vec::new()));
+    // From here on a tree may exist, so an interruption must remove it —
+    // and say what the run had ruled until then. A CI job that hits its
+    // time limit ends exactly here.
     {
-        let (repo, scratch) = (repo.clone(), scratch.clone());
+        let (repo, scratch, live) = (repo.clone(), scratch.clone(), live.clone());
         tamper::stop::install(move || {
             if let Err(e) = tree::remove_all_under(&repo, &scratch) {
                 eprintln!("tamper: interrupted, and the cleanup failed: {e}");
+            }
+            if let Ok(done) = live.lock()
+                && !done.is_empty()
+            {
+                println!(
+                    "INTERRUPTED — this is what the run had ruled until then, not a result \
+                     for the whole selection:"
+                );
+                print!("{}", Summary::of(&done).render());
             }
         });
     }
@@ -286,6 +361,10 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         cache,
         cfg,
         no_cache: o.no_cache || dry,
+        ledger: book,
+        deadline: o.budget.map(|b| Instant::now() + b),
+        baselines: Mutex::new(BTreeMap::new()),
+        live,
     };
 
     let mut blocked: Vec<Blocked> = Vec::new();
@@ -299,11 +378,11 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
         );
         out
     } else {
-        let mut targets: Vec<String> = chosen.iter().map(|c| c.target.clone()).collect();
-        targets.sort();
-        targets.dedup();
-        let red = run::baseline(&ctx, &targets)?;
-        blocked = red
+        // Each target's baseline is built when its first case comes up
+        // (`Ctx::baseline_red`); what turned out red is collected afterwards.
+        let out = run::all_with_retry(&chosen, &ctx, o.jobs);
+        blocked = ctx
+            .red_baselines()
             .into_iter()
             .map(|(target, reason)| Blocked {
                 cases: chosen.iter().filter(|c| c.target == target).count(),
@@ -311,25 +390,62 @@ fn execute(o: &Opts, dry: bool) -> Result<ExitCode, String> {
                 reason,
             })
             .collect();
-        let runnable: Vec<&Case> = chosen
-            .iter()
-            .filter(|c| !blocked.iter().any(|b| b.target == c.target))
-            .copied()
-            .collect();
-        if runnable.is_empty() {
-            Vec::new()
-        } else {
-            run::all_with_retry(&runnable, &ctx, o.jobs)
-        }
+        out
     };
 
     // Das eigene Laufverzeichnis wieder abraeumen: Die Baeume darin sind
     // einzeln entfernt, was bleibt, ist die leere Huelle.
     let _ = std::fs::remove_dir_all(&ctx.scratch);
 
-    let summary = Summary::of(&outcomes).with_blocked(blocked);
+    let mut summary = Summary::of(&outcomes);
+    if let Some(book) = &ctx.ledger {
+        let now = now_secs();
+        let state = ledger::state(&chosen, book, now);
+        let ruled_this_run = outcomes
+            .iter()
+            .filter(|o| o.verdict.is_ruling() && !o.from_cache)
+            .count();
+        if let Some(file) = &o.metrics {
+            write_atomically(file, &ledger::metrics(&state, ruled_this_run, now))?;
+        }
+        let in_blocked: usize = blocked.iter().map(|b| b.cases).sum();
+        summary = summary.with_book(Book {
+            // A finding this run made is already in the list above; what
+            // STANDS is what the ledger holds for the cases it did not rule.
+            standing: state
+                .findings
+                .iter()
+                .filter(|s| !outcomes.iter().any(|o| o.case_id == s.id))
+                .cloned()
+                .collect(),
+            ruled_this_run,
+            not_reached: chosen
+                .len()
+                .saturating_sub(outcomes.len())
+                .saturating_sub(in_blocked),
+            max_age_days: o.max_age_days,
+            state,
+        });
+    }
+    let summary = summary.with_blocked(blocked);
     print!("{}", summary.render());
     Ok(ExitCode::from(summary.exit_code()))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// A collector may read the file at any moment; half a file would be a
+/// parse error there, not just a wrong number.
+fn write_atomically(file: &Path, text: &str) -> Result<(), String> {
+    let tmp = file.with_extension(format!("tmp-{}", std::process::id()));
+    std::fs::write(&tmp, text)
+        .and_then(|()| std::fs::rename(&tmp, file))
+        .map_err(|e| format!("cannot write {}: {e}", file.display()))
 }
 
 fn head(repo: &Path) -> Result<String, String> {
@@ -376,6 +492,16 @@ fn cache_dir(repo: &Path) -> Result<PathBuf, String> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .ok_or("neither XDG_CACHE_HOME nor HOME is set")?;
+    Ok(base.join("tamper").join(slug(repo)))
+}
+
+/// The ledger is STATE, not cache: losing it is losing the record of what
+/// was ruled when, and every case would look new.
+fn state_dir(repo: &Path) -> Result<PathBuf, String> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+        .ok_or("neither XDG_STATE_HOME nor HOME is set — pass --ledger DIR")?;
     Ok(base.join("tamper").join(slug(repo)))
 }
 

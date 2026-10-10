@@ -102,8 +102,12 @@ commands. `perl` expressions and `script` levers remain code from the case
 file, trusted like the repository that holds it.
 
 An interrupted run (SIGINT, SIGTERM, SIGHUP) removes its own worktrees before
-it exits with 128 + signal; the trees of a run that was killed outright are
-removed at the next start, once its process is gone.
+it exits with 128 + signal — and prints what it had ruled until then, so a CI
+job that hits its time limit does not end without a word. The trees of a run
+that was killed outright are removed at the next start, once its process is
+gone.
+
+While it runs, `tamper` writes one line per ruling to stderr.
 
 ## Exit codes
 
@@ -114,15 +118,17 @@ removed at the next start, once its process is gone.
 | 2 | tamper could not run |
 | 3 | a target's baseline is red — its cases were not run, the others were |
 | 4 | no finding, but cases without a ruling |
+| 5 | no finding, but the ledger's oldest entry is older than `--max-age` |
 
-Exit 3 is the one worth explaining. Before the first case, `tamper` builds
-each target **unsabotaged**. If the clean tree does not build, every case
+Exit 3 is the one worth explaining. Before the first case of a target,
+`tamper` builds that target **unsabotaged**. If the clean tree does not build, every case
 would dutifully report "failed with the expected message" — a full set of
 ticks for nothing. So a red baseline produces no verdicts for its target: the
 report names the target, why its clean tree is red, and how many cases were
 not run. The other targets run as usual — one upstream hash mismatch should
 not leave five hundred cases on healthy targets unjudged. A finding still
-outranks exit 3; exit 3 outranks cases without a ruling.
+outranks exit 3; exit 3 outranks exit 5, and both outrank cases without a
+ruling.
 
 ## The cache
 
@@ -135,6 +141,49 @@ flip a ruling — a **named assumption**, documented with the counter-example
 that breaks it, and held in place by three guards: only `ok` is stored, the
 report names the cache's *coverage* and the age of its oldest entry rather
 than a hit count, and `--no-cache` exists for a periodic full run.
+
+## The ledger
+
+A periodic full run is a promise only while it finishes. Every case is a
+build, and an inventory grows: the run this tool was written for went from
+116 cases to 789, each a full NixOS evaluation, and was cut off by its time
+limit every week — eight runs, none green, and since the report came at the
+end, nothing left behind. "A stale `ok` lives at most seven days" had never
+been true, and nothing said so.
+
+The ledger is the answer to a run that cannot get through everything in one
+go. It keeps one small file per case — verdict, time, commit — written the
+moment the case is ruled, independent of the tree (the cache cannot do this:
+one commit to the check definitions turns every cache key at once).
+
+```
+tamper run --no-cache -j 1 --oldest-first --budget 170m --max-age 21 --metrics tamper.prom
+```
+
+- `--oldest-first` rules what has never been ruled first, then the standing
+  findings, then `ok` from the oldest ruling to the youngest.
+- `--budget` starts no new case once the time is up. The case under way is
+  finished; the rest keeps its place in line for the next run.
+- A **finding stands** until its case is ruled again: a run that did not get
+  to it still reports it and still exits 1. Standing findings go second in
+  line, so a repaired case turns green the next night.
+- `--max-age` turns the promise into a check: exit 5 when the oldest entry is
+  older than that. A case that was never ruled is measured from the day it
+  was first seen — new cases are not overdue on their first day, and none can
+  wait unnoticed.
+- `--metrics` writes the ledger's state as a Prometheus text file
+  (`tamper_oldest_ruling_seconds`, `tamper_never_ruled`,
+  `tamper_standing_findings`, …), so the age of the oldest ruling can be
+  watched instead of believed.
+
+The report names the gap, as the cache's does: how many cases this run ruled,
+how many it did not reach, how many were never ruled, and which entry is the
+oldest. `network` and `queue-timeout` are not rulings and leave an entry
+untouched. The entries of deleted cases are dropped at the start of a run.
+
+The ledger lives in `$XDG_STATE_HOME/tamper/<repository>` unless `--ledger`
+says otherwise — state, not cache: losing it makes every case look new.
+Without one of these switches a run keeps no ledger and behaves as before.
 
 ## Install
 

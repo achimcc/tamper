@@ -60,6 +60,11 @@ impl Verdict {
         }
     }
 
+    /// The reverse of `slug` — the ledger stores verdicts by their slug.
+    pub fn from_slug(slug: &str) -> Option<Verdict> {
+        Verdict::ALL.into_iter().find(|v| v.slug() == slug)
+    }
+
     /// Something is wrong and a human has to look. Drives exit code 1.
     pub fn is_finding(self) -> bool {
         matches!(

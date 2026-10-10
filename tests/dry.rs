@@ -33,6 +33,10 @@ build_class = "eval"
         cfg,
         cache,
         no_cache: true,
+        ledger: None,
+        deadline: None,
+        baselines: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+        live: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
     };
     let cases = vec![
         case_with("trifft", "0,/x = 1/s//x = 2/"),

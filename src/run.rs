@@ -1,13 +1,16 @@
 //! One case, and then all of them.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::build::{self, Outcome as Build};
 use crate::cache::Cache;
 use crate::cases::Case;
 use crate::config::Config;
+use crate::ledger::Ledger;
 use crate::lever;
 use crate::message;
 use crate::parse;
@@ -21,6 +24,67 @@ pub struct Ctx {
     pub cfg: Config,
     pub cache: Cache,
     pub no_cache: bool,
+    /// Where every ruling is written the moment it is made. `None` = the
+    /// run keeps no ledger (0.4.1 behaviour).
+    pub ledger: Option<Ledger>,
+    /// After this instant no new case is started; the one under way is
+    /// finished. `None` = no budget.
+    pub deadline: Option<Instant>,
+    /// The baseline of each target, built when its first case comes up:
+    /// `None` = green, `Some(reason)` = red, the target's cases are skipped.
+    pub baselines: Mutex<BTreeMap<String, Option<String>>>,
+    /// Every outcome so far, shared with the signal handler — an interrupted
+    /// run reports what it ruled instead of dying without a word.
+    pub live: Arc<Mutex<Vec<Outcome>>>,
+}
+
+impl Ctx {
+    pub fn out_of_time(&self) -> bool {
+        self.deadline.is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// The targets whose baseline turned out red, with the reason.
+    pub fn red_baselines(&self) -> Vec<(String, String)> {
+        self.baselines
+            .lock()
+            .map(|b| {
+                b.iter()
+                    .filter_map(|(t, r)| r.clone().map(|r| (t.clone(), r)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Is this target's clean tree green? Built once, on first use, under
+    /// the lock — two workers asking for the same target wait for ONE build
+    /// instead of starting two.
+    ///
+    /// ON FIRST USE, NOT UP FRONT (0.5.0): a run with a time budget rules
+    /// the oldest fifty cases of several hundred. Building the baseline of
+    /// every target first would spend the budget on targets that are not
+    /// even due tonight.
+    fn baseline_red(&self, name: &str) -> Result<Option<String>, String> {
+        let mut known = self
+            .baselines
+            .lock()
+            .map_err(|_| "baseline lock poisoned".to_string())?;
+        if let Some(r) = known.get(name) {
+            return Ok(r.clone());
+        }
+        let red = baseline(self, &[name.to_string()])?
+            .into_iter()
+            .next()
+            .map(|(_, reason)| reason);
+        known.insert(name.to_string(), red.clone());
+        Ok(red)
+    }
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone)]
@@ -45,8 +109,9 @@ pub fn shard(cases: &[Case], shard: usize, of: usize) -> Vec<&Case> {
         .collect()
 }
 
-/// Build the unsabotaged tree once per target, and return the targets
-/// whose baseline has no green — each with the reason.
+/// Build the unsabotaged tree of each given target, and return those whose
+/// baseline has no green — each with the reason. Called per target, when its
+/// first case comes up (`Ctx::baseline_red`).
 ///
 /// Without this, a check that is ALREADY red on a clean tree makes every
 /// single case report "fell, with the expected message" — 525 ticks for
@@ -326,11 +391,17 @@ fn first_errors(text: &str) -> String {
         .join("\n")
 }
 
-/// Run the cases on `jobs` workers. Each worker holds exactly one tree at a
-/// time; lotse decides when a build actually starts.
+/// Run the cases on `jobs` workers, IN THE ORDER GIVEN. Each worker holds
+/// exactly one tree at a time; lotse decides when a build actually starts.
+///
+/// A case whose target has a red baseline is skipped and appears in no
+/// outcome — `Ctx::red_baselines` names the target. A case that is not
+/// reached before the budget runs out is not in the outcomes either; with a
+/// ledger it simply keeps its old entry and comes first next time.
 pub fn all(cases: &[&Case], ctx: &Ctx, jobs: usize) -> Vec<Outcome> {
     let next = AtomicUsize::new(0);
     let results: Mutex<Vec<Outcome>> = Mutex::new(Vec::new());
+    let started = Instant::now();
 
     std::thread::scope(|scope| {
         for slot in 0..jobs.max(1) {
@@ -338,12 +409,24 @@ pub fn all(cases: &[&Case], ctx: &Ctx, jobs: usize) -> Vec<Outcome> {
             let results = &results;
             scope.spawn(move || {
                 loop {
-                    if crate::stop::requested() {
+                    if crate::stop::requested() || ctx.out_of_time() {
                         break;
                     }
                     let i = next.fetch_add(1, Ordering::SeqCst);
                     let Some(case) = cases.get(i) else { break };
+                    // An unknown target is left to `one`, which names it.
+                    if ctx.cfg.target.contains_key(&case.target) {
+                        match ctx.baseline_red(&case.target) {
+                            Ok(None) => {}
+                            Ok(Some(_)) => continue,
+                            Err(e) => {
+                                eprintln!("tamper: baseline of {}: {e}", case.target);
+                                continue;
+                            }
+                        }
+                    }
                     let outcome = one(case, ctx, slot);
+                    record(ctx, &outcome, started);
                     if let Ok(mut r) = results.lock() {
                         r.push(outcome);
                     }
@@ -355,6 +438,44 @@ pub fn all(cases: &[&Case], ctx: &Ctx, jobs: usize) -> Vec<Outcome> {
     let mut out = results.into_inner().unwrap_or_default();
     out.sort_by(|a, b| a.case_id.cmp(&b.case_id));
     out
+}
+
+/// Everything that must not wait for the end of the run: the ledger entry,
+/// the copy for the signal handler, and one line on stderr.
+///
+/// THE LINE IS THE POINT. Up to 0.4.1 a run printed nothing until its
+/// report. On the homeserver's runner that meant three hours of silence and
+/// then "The operation was canceled." — nobody could tell whether it had
+/// ruled two cases or two hundred.
+fn record(ctx: &Ctx, outcome: &Outcome, started: Instant) {
+    if outcome.from_cache {
+        return;
+    }
+    if let Some(ledger) = &ctx.ledger
+        && let Err(e) = ledger.put(
+            &outcome.case_id,
+            outcome.verdict,
+            &ctx.commit,
+            &outcome.detail,
+            now_secs(),
+        )
+    {
+        eprintln!("tamper: {e}");
+    }
+    let done = match ctx.live.lock() {
+        Ok(mut live) => {
+            live.retain(|o| o.case_id != outcome.case_id);
+            live.push(outcome.clone());
+            live.len()
+        }
+        Err(_) => 0,
+    };
+    eprintln!(
+        "  {:<14} case {}  ({done} done, {} s)",
+        outcome.verdict.slug(),
+        outcome.case_id,
+        started.elapsed().as_secs()
+    );
 }
 
 /// Cases without a ruling get one more go, after everything else is done —
@@ -371,7 +492,9 @@ pub fn all_with_retry(cases: &[&Case], ctx: &Ctx, jobs: usize) -> Vec<Outcome> {
         })
         .copied()
         .collect();
-    if again.is_empty() {
+    // No second pass once the time is up: it would start new builds after
+    // the budget, which is the one thing a budget promises not to do.
+    if again.is_empty() || ctx.out_of_time() || crate::stop::requested() {
         return out;
     }
     let second = all(&again, ctx, jobs);
