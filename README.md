@@ -142,6 +142,12 @@ that breaks it, and held in place by three guards: only `ok` is stored, the
 report names the cache's *coverage* and the age of its oldest entry rather
 than a hit count, and `--no-cache` exists for a periodic full run.
 
+The cache is an optimisation and never decides a case. If a key cannot be
+computed — a declared definition file is missing from the commit under test —
+the case is built without the cache and the report says why. Until 0.5.1 that
+case came back `not-red` without any build: "the check does not fire",
+measured on nothing.
+
 ## The ledger
 
 A periodic full run is a promise only while it finishes. Every case is a

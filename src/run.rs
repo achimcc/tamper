@@ -170,6 +170,21 @@ fn make_tree(ctx: &Ctx, at: &std::path::Path) -> Result<Tree, String> {
     }
 }
 
+/// The cache is an optimisation, never a judge. A key that cannot be computed
+/// (a definition file the tested commit does not have, 2026-10-14: the config
+/// of an older tree named a file the commit had deleted) used to end the case
+/// as `not-red` WITHOUT building — "the check does not fire", measured on
+/// nothing. Now the case is built uncached, and the note says why.
+pub fn key_or_uncached(key: Result<String, String>) -> (Option<String>, Option<String>) {
+    match key {
+        Ok(k) => (Some(k), None),
+        Err(e) => (
+            None,
+            Some(format!("built without the cache: cache key: {e}")),
+        ),
+    }
+}
+
 pub fn one(case: &Case, ctx: &Ctx, slot: usize) -> Outcome {
     let out = |verdict, detail: String| Outcome {
         case_id: case.id.clone(),
@@ -184,17 +199,17 @@ pub fn one(case: &Case, ctx: &Ctx, slot: usize) -> Outcome {
     };
 
     // The cache is asked BEFORE the tree is made: a hit costs nothing at all.
-    let key = if ctx.no_cache {
-        None
+    let (key, uncached) = if ctx.no_cache {
+        (None, None)
     } else {
-        match ctx
-            .cache
-            .key(case, &target.attr, &ctx.cfg.cache.definitions)
-        {
-            Ok(k) => Some(k),
-            Err(e) => return out(Verdict::NotRed, format!("cache key: {e}")),
-        }
+        key_or_uncached(
+            ctx.cache
+                .key(case, &target.attr, &ctx.cfg.cache.definitions),
+        )
     };
+    if let Some(note) = &uncached {
+        eprintln!("tamper: case {}: {note}", case.id);
+    }
     if let Some(k) = &key
         && let Some(hit) = ctx.cache.get(k)
     {
@@ -210,11 +225,19 @@ pub fn one(case: &Case, ctx: &Ctx, slot: usize) -> Outcome {
     let at = ctx.scratch.join(format!("slot-{slot}"));
     let tree = match make_tree(ctx, &at) {
         Ok(t) => t,
-        Err(e) => return out(Verdict::NotRed, e),
+        // No tree, no build: nothing was learned about the check.
+        Err(e) => return out(Verdict::QueueTimeout, format!("CANNOT MEASURE: {e}")),
     };
 
-    let (verdict, detail) = judge(case, ctx, target.attr.as_str(), &tree);
+    let (verdict, mut detail) = judge(case, ctx, target.attr.as_str(), &tree);
     let _ = tree.remove();
+    if let Some(note) = uncached {
+        detail = if detail.is_empty() {
+            note
+        } else {
+            format!("{detail}\n{note}")
+        };
+    }
 
     if verdict == Verdict::Ok
         && let Some(k) = &key
@@ -322,8 +345,8 @@ pub fn dry(cases: &[&Case], ctx: &Ctx) -> Vec<Outcome> {
             Err(e) => {
                 out.push(Outcome {
                     case_id: case.id.clone(),
-                    verdict: Verdict::NotRed,
-                    detail: e,
+                    verdict: Verdict::QueueTimeout,
+                    detail: format!("CANNOT MEASURE: {e}"),
                     from_cache: false,
                     cache_age_days: None,
                 });
