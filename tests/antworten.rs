@@ -151,6 +151,7 @@ fn case_expecting(expect: &str) -> Case {
         name: "x".into(),
         target: "server".into(),
         expect: expect.into(),
+        checks: vec![],
         compare: Compare::Regex,
         why: "x".into(),
         green: false,

@@ -75,3 +75,106 @@ fn a_pattern_that_is_not_there_does_not_match() {
         Compare::Regex
     ));
 }
+
+// --- check ids: markers, not patterns ---------------------------------------
+
+use tamper::cases::{Case, Lever};
+use tamper::message::{expected, marker, missing_checks};
+
+fn case_with(expect: &str, checks: &[&str]) -> Case {
+    Case {
+        id: "x".into(),
+        name: "x".into(),
+        target: "server".into(),
+        expect: expect.into(),
+        checks: checks.iter().map(|s| s.to_string()).collect(),
+        compare: Compare::Regex,
+        why: "x".into(),
+        green: false,
+        levers: vec![Lever::Sed {
+            file: "a.nix".into(),
+            sed: "s|a|b|".into(),
+        }],
+    }
+}
+
+const OUT: &str = "error: Failed assertions:\n- [P-103] Pruefung 103: Gast media-01 ohne\n       Snapshot-Abdeckung\n- [P-103b] Pruefung 103b: etwas anderes\n";
+
+#[test]
+fn the_marker_of_a_check_id_is_the_id_in_brackets() {
+    assert_eq!(marker("P-103"), "[P-103]");
+}
+
+#[test]
+fn a_present_marker_satisfies_a_checks_only_case() {
+    assert!(expected(OUT, &case_with("", &["P-103"])));
+}
+
+#[test]
+fn a_missing_marker_does_not() {
+    assert!(!expected(OUT, &case_with("", &["P-104"])));
+    assert_eq!(missing_checks(OUT, &["P-104".to_string()]), vec!["P-104"]);
+}
+
+#[test]
+fn an_id_is_a_value_not_a_prefix() {
+    // The whole reason for the field: `Pruefung 103` as a pattern also hits
+    // 103b. `[P-103]` does not hit `[P-103b]`, and the other way round.
+    let only_b = "error: Failed assertions:\n- [P-103b] Pruefung 103b: etwas anderes\n";
+    assert!(matches(only_b, "Pruefung 103", Compare::Regex));
+    assert!(!expected(only_b, &case_with("", &["P-103"])));
+    assert!(expected(only_b, &case_with("", &["P-103b"])));
+}
+
+#[test]
+fn every_named_check_must_have_fired() {
+    assert!(expected(OUT, &case_with("", &["P-103", "P-103b"])));
+    assert!(!expected(OUT, &case_with("", &["P-103", "P-999"])));
+    assert_eq!(
+        missing_checks(OUT, &["P-103".into(), "P-999".into(), "P-998".into()]),
+        vec!["P-999", "P-998"]
+    );
+}
+
+#[test]
+fn markers_are_case_sensitive_and_literal() {
+    assert!(!expected(OUT, &case_with("", &["p-103"])));
+    // `expect` would read `[P-103]` as a character class; the marker is literal.
+    let bracketless = "error: P-103 Pruefung 103: ohne Snapshot-Abdeckung";
+    assert!(!expected(bracketless, &case_with("", &["P-103"])));
+}
+
+#[test]
+fn a_marker_survives_the_wrapped_output() {
+    // Normalised like `expect`: a marker carries no whitespace, so nix cannot
+    // break it, and the text around it collapses to single spaces.
+    let wrapped = "error:\n  - [P-103]\n       Pruefung 103\n";
+    assert!(expected(wrapped, &case_with("", &["P-103"])));
+}
+
+#[test]
+fn expect_and_checks_together_must_both_hold() {
+    assert!(expected(
+        OUT,
+        &case_with("ohne Snapshot-Abdeckung", &["P-103"])
+    ));
+    // marker there, message not
+    assert!(!expected(OUT, &case_with("etwas ganz anderes", &["P-103"])));
+    // message there, marker not
+    assert!(!expected(
+        OUT,
+        &case_with("ohne Snapshot-Abdeckung", &["P-999"])
+    ));
+}
+
+#[test]
+fn a_case_with_neither_never_passes() {
+    // Refused by `cases::validate`; should one slip through, it must not be `ok`.
+    assert!(!expected(OUT, &case_with("", &[])));
+}
+
+#[test]
+fn without_checks_the_old_rule_stands() {
+    assert!(expected(OUT, &case_with("ohne Snapshot-Abdeckung", &[])));
+    assert!(!expected(OUT, &case_with("etwas ganz anderes", &[])));
+}

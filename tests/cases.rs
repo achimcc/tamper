@@ -335,3 +335,142 @@ fn a_plain_relative_lever_path_is_fine() {
     let cases = cases::load_dir(&dir).unwrap();
     assert!(cases::validate(&cases, &config()).is_empty());
 }
+
+// --- checks: the ids of the assertions a case brings down -------------------
+
+fn case_toml(fields: &str) -> String {
+    format!(
+        r#"
+[[case]]
+id = "1"
+name = "x"
+target = "server"
+{fields}
+why = "x"
+levers = [ {{ file = "f.nix", sed = "s|a|b|" }} ]
+"#
+    )
+}
+
+fn problems_of(fields: &str) -> Vec<String> {
+    let dir = tempdir();
+    write(&dir, "a.toml", &case_toml(fields));
+    let cases = cases::load_dir(&dir).unwrap();
+    cases::validate(&cases, &config())
+}
+
+#[test]
+fn a_case_may_name_the_checks_it_brings_down_instead_of_a_message() {
+    // `expect = "Pruefung 103"` also matches `Pruefung 103b`. An id is a
+    // value, not a pattern: the case says WHICH check must fall.
+    let dir = tempdir();
+    write(
+        &dir,
+        "a.toml",
+        &case_toml(r#"checks = ["P-103", "P-ryot-zusagen"]"#),
+    );
+    let cases = cases::load_dir(&dir).unwrap();
+    assert_eq!(cases[0].checks, vec!["P-103", "P-ryot-zusagen"]);
+    assert!(cases[0].expect.is_empty());
+    assert!(cases::validate(&cases, &config()).is_empty());
+}
+
+#[test]
+fn checks_and_expect_together_are_allowed() {
+    // Then both must hold — the id says which check, the pattern what it says.
+    let problems = problems_of(
+        r#"checks = ["P-103"]
+expect = "ohne Snapshot-Abdeckung""#,
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+}
+
+#[test]
+fn green_and_checks_contradict_each_other() {
+    let problems = problems_of(
+        r#"green = true
+checks = ["P-103"]"#,
+    );
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("green") && p.contains("checks")),
+        "{problems:?}"
+    );
+}
+
+#[test]
+fn an_empty_checks_list_does_not_count_as_an_expectation() {
+    let problems = problems_of("checks = []");
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("expect") && p.contains("checks") && p.contains("green")),
+        "{problems:?}"
+    );
+}
+
+#[test]
+fn the_three_expectations_cover_every_combination() {
+    // (green, expect, checks) -> sound?
+    for (fields, sound) in [
+        ("green = true", true),
+        (r#"expect = "x""#, true),
+        (r#"checks = ["P-1"]"#, true),
+        ("checks = [\"P-1\"]\nexpect = \"x\"", true),
+        ("green = true\nexpect = \"x\"", false),
+        ("green = true\nchecks = [\"P-1\"]", false),
+        ("green = true\nexpect = \"x\"\nchecks = [\"P-1\"]", false),
+        ("", false),
+    ] {
+        let problems = problems_of(fields);
+        assert_eq!(problems.is_empty(), sound, "{fields:?}: {problems:?}");
+    }
+}
+
+#[test]
+fn a_check_id_has_one_shape() {
+    for bad in [
+        "345",
+        "p-345",
+        "P-",
+        "P-Ryot",
+        "P-ryot zusagen",
+        "P--x",
+        "[P-345]",
+        "P-ä",
+    ] {
+        let problems = problems_of(&format!("checks = [{bad:?}]"));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("checks") && p.contains(bad) && p.contains("P-")),
+            "{bad}: {problems:?}"
+        );
+    }
+    for good in ["P-345", "P-ryot-zusagen", "P-103b", "P-0", "P-a-"] {
+        assert!(
+            problems_of(&format!("checks = [{good:?}]")).is_empty(),
+            "{good} should be a valid check id"
+        );
+        assert!(cases::check_id(good).is_ok(), "{good}");
+    }
+}
+
+#[test]
+fn an_invalid_check_id_says_which_part_is_wrong() {
+    let err = cases::check_id("P-Ryot").unwrap_err();
+    assert!(err.contains("lowercase"), "{err}");
+    let err = cases::check_id("345").unwrap_err();
+    assert!(err.contains("start with `P-`"), "{err}");
+    let err = cases::check_id("P-").unwrap_err();
+    assert!(err.contains("nothing follows"), "{err}");
+}
+
+#[test]
+fn a_checks_only_case_does_not_have_its_empty_expect_compiled_as_a_regex() {
+    // The empty pattern compiles and matches everything; it must neither be
+    // reported nor relied on. `message::expected` ignores an empty `expect`.
+    let problems = problems_of(r#"checks = ["P-1"]"#);
+    assert!(problems.is_empty(), "{problems:?}");
+}

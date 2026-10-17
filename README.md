@@ -80,13 +80,43 @@ levers = [
 ]
 ```
 
-A case either names the message it expects or sets `green = true`; both at
-once, or neither, is refused at load time.
+A case says what it expects in one of three ways: the message the build must
+carry (`expect`), the checks it must bring down (`checks`), or that the check
+must stay GREEN (`green = true`). `expect` and `checks` may stand together —
+then both must hold. `green` next to either, or none of the three, is refused
+at load time.
 
 `expect` is a case-insensitive **regular expression** by default, matched
 against the build output with whitespace normalised — build tools wrap their
 lines, and a pattern that spans the break would make a healthy check look
 dead. `compare = "literal"` switches to a plain substring.
+
+### Naming the check instead of its message
+
+```toml
+[[case]]
+id = "103"
+name = "guest without snapshot coverage"
+target = "server"
+checks = ["P-103"]
+why = "..."
+levers = [ { file = "lib/guests.nix", sed = "s|a|b|" } ]
+```
+
+A pattern is a guess about the text; an id is the check itself. The case
+above is `ok` only if the build output carries the marker `[P-103]` —
+literally, case-sensitively, after the same whitespace normalisation as
+`expect`. Every id in the list must have left its marker. `expect = "check
+103"` also matched `check 103b`, and a case whose lever brought down the
+wrong check came back `ok`; `[P-103]` does not match `[P-103b]`.
+
+An id is `P-` followed by lowercase letters, digits and hyphens
+(`^P-[a-z0-9][a-z0-9-]*$`): `P-103`, `P-ryot-promises`. The checks on the
+other side start their message with that marker, `[P-103] …`, and nothing
+else about them changes. A build that went red without one of the markers is
+`other-message` — the same ruling as a different message, and the detail
+names the markers that are missing. Set `expect` next to `checks` when the
+wording matters too.
 
 Levers are `sed`, `perl`, or `script` for anything else. `sed` and `perl` run
 without a shell in between: the expression is one argv element, so it needs no

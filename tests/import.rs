@@ -297,3 +297,43 @@ faellt_mit "Dataset ohne Snapshot-Abdeckung" "ohne Snapshot-Abdeckung"
     assert_eq!(got.cases.len(), 1);
     assert!(got.leftovers.is_empty(), "{:?}", got.leftovers);
 }
+
+#[test]
+fn to_toml_writes_checks_and_load_dir_reads_them_back() {
+    // The writer and the reader must agree on the field, or an exported
+    // case with check ids would lose them on the way back in.
+    use tamper::cases::Case;
+    let case = Case {
+        id: "1".into(),
+        name: "x".into(),
+        target: "server".into(),
+        expect: String::new(),
+        checks: vec!["P-103".into(), "P-ryot-zusagen".into()],
+        compare: Compare::Regex,
+        why: "x".into(),
+        green: false,
+        levers: vec![Lever::Sed {
+            file: "f.nix".into(),
+            sed: "s|a|b|".into(),
+        }],
+    };
+    let toml = tamper::import::to_toml(&[case]);
+    assert!(
+        toml.contains("checks = [\"P-103\", \"P-ryot-zusagen\"]"),
+        "{toml}"
+    );
+    assert!(!toml.contains("expect ="), "{toml}");
+
+    let dir = std::env::temp_dir().join(format!(
+        "tamper-import-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.toml"), &toml).unwrap();
+    let back = tamper::cases::load_dir(&dir).unwrap();
+    assert_eq!(back[0].checks, vec!["P-103", "P-ryot-zusagen"]);
+}

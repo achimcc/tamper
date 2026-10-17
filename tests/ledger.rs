@@ -28,6 +28,7 @@ fn case(id: &str) -> Case {
         name: "x".into(),
         target: "server".into(),
         expect: "x".into(),
+        checks: vec![],
         compare: Compare::Regex,
         why: "x".into(),
         green: false,

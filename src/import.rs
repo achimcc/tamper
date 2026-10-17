@@ -388,6 +388,7 @@ fn emit(out: &mut Imported, levers: &mut Vec<Lever>, pending: &mut Vec<Leftover>
         green: false,
         target: d.target,
         expect,
+        checks: Vec::new(),
         compare: d.compare,
         why: d.why,
         levers: taken,
@@ -536,8 +537,12 @@ pub fn to_toml(cases: &[Case]) -> String {
         out.push_str(&format!("target = {}\n", basic(&c.target)));
         if c.green {
             out.push_str("green = true\n");
-        } else {
+        } else if !c.expect.is_empty() {
             out.push_str(&format!("expect = {}\n", basic(&c.expect)));
+        }
+        if !c.checks.is_empty() {
+            let list: Vec<String> = c.checks.iter().map(|id| basic(id)).collect();
+            out.push_str(&format!("checks = [{}]\n", list.join(", ")));
         }
         if c.compare == Compare::Literal {
             out.push_str("compare = \"literal\"\n");

@@ -60,6 +60,7 @@ fn a_case() -> Case {
         name: "x".into(),
         target: "server".into(),
         expect: "ueber einem eigenen Mount".into(),
+        checks: vec![],
         compare: Compare::Regex,
         why: "x".into(),
         green: false,
@@ -121,6 +122,21 @@ fn the_working_tree_does_not_change_the_key_of_a_commit() {
         before,
         open(&dir, &sha).key(&a_case(), ATTR, &defs()).unwrap()
     );
+}
+
+#[test]
+fn changing_the_named_checks_changes_the_key() {
+    // A case that is re-pointed at another check id must be judged again;
+    // an old `ok` for the former id says nothing about the new one.
+    let (dir, sha) = sandbox();
+    let c = open(&dir, &sha);
+    let before = c.key(&a_case(), ATTR, &defs()).unwrap();
+    let mut other = a_case();
+    other.checks = vec!["P-9c".into()];
+    let with_check = c.key(&other, ATTR, &defs()).unwrap();
+    assert_ne!(before, with_check);
+    other.checks = vec!["P-9d".into()];
+    assert_ne!(with_check, c.key(&other, ATTR, &defs()).unwrap());
 }
 
 #[test]

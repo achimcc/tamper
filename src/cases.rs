@@ -100,9 +100,18 @@ pub struct Case {
     pub id: String,
     pub name: String,
     pub target: String,
-    /// The message the build must carry. Empty exactly when `green` is set.
+    /// The message the build must carry. May be empty when `green` is set or
+    /// `checks` names the assertions instead.
     #[serde(default)]
     pub expect: String,
+    /// The ids of the checks this case must bring down, e.g. `P-345`. The
+    /// build output must carry the marker `[P-345]` for every one of them,
+    /// literally. A check id is a VALUE where `expect` is a pattern: the
+    /// pattern `Pruefung 103` also matches `Pruefung 103b`, and a case that
+    /// brought down the wrong check came back `ok`. May stand alone or next
+    /// to `expect`; then both must hold.
+    #[serde(default)]
+    pub checks: Vec<String>,
     /// This change must leave the check GREEN. A handful of cases state that
     /// — they guard against a check that fires on something legitimate — and
     /// it is the opposite statement from every other case here.
@@ -164,6 +173,34 @@ pub fn check_lever_path(file: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A check id: `P-`, then lowercase letters, digits and hyphens, starting
+/// with a letter or digit — `^P-[a-z0-9][a-z0-9-]*$`. Spelled out rather than
+/// compiled, so the error can say which part is wrong.
+pub fn check_id(id: &str) -> Result<(), String> {
+    let wrong = |why: &str| {
+        Err(format!(
+            "`{id}` is not a check id ({why}) — a check id is `P-` followed by lowercase \
+             letters, digits and hyphens, e.g. `P-345` or `P-ryot-zusagen`"
+        ))
+    };
+    let Some(rest) = id.strip_prefix("P-") else {
+        return wrong("it does not start with `P-`");
+    };
+    let Some(first) = rest.chars().next() else {
+        return wrong("nothing follows `P-`");
+    };
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit()) {
+        return wrong("the part after `P-` must start with a lowercase letter or a digit");
+    }
+    if !rest
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return wrong("only lowercase letters, digits and hyphens are allowed after `P-`");
+    }
+    Ok(())
+}
+
 /// Everything that can be decided without touching the repository. Returns
 /// one line per problem; empty means the set is sound.
 pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
@@ -183,15 +220,33 @@ pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
                 "{at}: no lever — the case would build an unchanged tree and report green"
             ));
         }
-        match (case.green, case.expect.trim().is_empty()) {
-            (true, false) => problems.push(format!(
+        // What the case expects: the check must stay GREEN, or the build
+        // must go red with this message (`expect`), or bringing down these
+        // checks (`checks`), or both of the latter. GREEN contradicts either.
+        let has_expect = !case.expect.trim().is_empty();
+        let has_checks = !case.checks.is_empty();
+        if case.green && has_expect {
+            problems.push(format!(
                 "{at}: `green` and `expect` at once — a case either names the message it \
                  expects or says the check must stay green, not both"
-            )),
-            (false, true) => problems.push(format!(
-                "{at}: neither `expect` nor `green` — the case does not say what it expects"
-            )),
-            _ => {}
+            ));
+        }
+        if case.green && has_checks {
+            problems.push(format!(
+                "{at}: `green` and `checks` at once — a case either names the checks it \
+                 brings down or says the check must stay green, not both"
+            ));
+        }
+        if !case.green && !has_expect && !has_checks {
+            problems.push(format!(
+                "{at}: neither `expect`, `checks` nor `green` — the case does not say what \
+                 it expects"
+            ));
+        }
+        for id in &case.checks {
+            if let Err(e) = check_id(id) {
+                problems.push(format!("{at}: `checks`: {e}"));
+            }
         }
         for file in case.levers.iter().flat_map(Lever::files) {
             if let Err(e) = check_lever_path(&file) {
@@ -205,6 +260,7 @@ pub fn validate(cases: &[Case], cfg: &Config) -> Vec<String> {
             problems.push(format!("{at}: unknown target `{}`", case.target));
         }
         if !case.green
+            && has_expect
             && case.compare == Compare::Regex
             && let Err(e) = regex::RegexBuilder::new(&case.expect)
                 .case_insensitive(true)

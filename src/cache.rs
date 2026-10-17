@@ -86,6 +86,11 @@ impl Cache {
         h.update(b"\0");
         h.update(format!("{:?}", case.compare).as_bytes());
         h.update(b"\0");
+        for id in &case.checks {
+            h.update(id.as_bytes());
+            h.update(b"\0");
+        }
+        h.update(b"\0");
         for lever in &case.levers {
             h.update(format!("{lever:?}").as_bytes());
             h.update(b"\0");

@@ -306,8 +306,14 @@ fn judge(case: &Case, ctx: &Ctx, attr: &str, tree: &Tree) -> (Verdict, String) {
 /// with a different one, the parser is the likelier author — `broken-nix`,
 /// the palette case. Costs one build per broken case, of which the inventory
 /// has one.
+///
+/// **A check id is matched as a marker, not a pattern** (0.6.0). A case with
+/// `checks = ["P-103"]` is `ok` only if `[P-103]` stands in the output — every
+/// id, literally; `expect` on top must match as well. A build that went red
+/// without one of the markers is `other-message`, the same ruling as a
+/// different message, and the detail names the markers that are missing.
 pub fn verdict_of(case: &Case, build: Build, broken: Option<String>) -> (Verdict, String) {
-    let expected = |text: &str| message::matches(text, &case.expect, case.compare);
+    let expected = |text: &str| message::expected(text, case);
     match build {
         Build::Network(text) if !case.green && expected(&text) => (Verdict::Ok, String::new()),
         Build::Network(_) => (Verdict::Network, String::new()),
@@ -326,8 +332,40 @@ pub fn verdict_of(case: &Case, build: Build, broken: Option<String>) -> (Verdict
         Build::Green => (Verdict::NotRed, String::new()),
         Build::Red(text) if expected(&text) => (Verdict::Ok, String::new()),
         Build::Red(_) if broken.is_some() => (Verdict::BrokenNix, broken.unwrap_or_default()),
-        Build::Red(text) => (Verdict::OtherMessage, first_errors(&text)),
+        Build::Red(text) => (
+            Verdict::OtherMessage,
+            format!("{}{}", wanted(case, &text), first_errors(&text)),
+        ),
     }
+}
+
+/// For `other-message` on a case that names checks: which markers the
+/// output lacks — or, if all of them are there, that `expect` is what did
+/// not match. Empty for a case without `checks`, so their reports read as
+/// before.
+fn wanted(case: &Case, text: &str) -> String {
+    if case.checks.is_empty() {
+        return String::new();
+    }
+    let missing = message::missing_checks(text, &case.checks);
+    if missing.is_empty() {
+        return format!(
+            "every marker is there ({}), but `expect` did not match\n",
+            case.checks
+                .iter()
+                .map(|id| message::marker(id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    format!(
+        "marker(s) not in the output: {}\n",
+        missing
+            .iter()
+            .map(|id| message::marker(id))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 /// Dry run: everything except the build. Answers "does the lever still hit,

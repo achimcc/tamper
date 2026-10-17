@@ -51,6 +51,7 @@ fn case_with(id: &str, sed: &str) -> Case {
         name: "x".into(),
         target: "server".into(),
         expect: "x".into(),
+        checks: vec![],
         compare: Compare::Regex,
         why: "x".into(),
         green: false,
